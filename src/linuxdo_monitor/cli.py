@@ -450,12 +450,16 @@ def run(config_dir, web_port, web_password):
     # 检查数据库版本
     db_path = config_manager.get_db_path()
     if db_path.exists():
-        from .migrations import check_migration_needed
+        from .migrations import check_migration_needed, migrate
         needs_migration, current_ver, latest_ver = check_migration_needed(db_path)
         if needs_migration:
-            click.echo(f"❌ 数据库版本过旧 (v{current_ver})，需要迁移到 v{latest_ver}")
-            click.echo(f"   请先运行: linux-do-monitor db-migrate --config-dir {config_dir or '.'}")
-            return
+            click.echo(f"⚠️ 数据库版本过旧 (v{current_ver})，正在自动迁移到 v{latest_ver}...")
+            try:
+                migrate(db_path)
+                click.echo("✅ 数据库迁移成功！")
+            except Exception as e:
+                click.echo(f"❌ 数据库迁移失败: {e}")
+                return
 
     # 配置日志（输出到 stdout + 文件）
     from .app import setup_logging
