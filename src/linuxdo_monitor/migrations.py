@@ -144,6 +144,9 @@ def get_schema_version(db_path: Path) -> int:
             # 表不存在，检查是否有 forum 字段来判断版本
             cursor = conn.execute("PRAGMA table_info(users)")
             columns = [row[1] for row in cursor.fetchall()]
+            if not columns:
+                # users 表不存在，说明是空数据库或未初始化
+                return 0
             if "forum" in columns:
                 # 已经有 forum 字段，说明是版本 2
                 return 2
