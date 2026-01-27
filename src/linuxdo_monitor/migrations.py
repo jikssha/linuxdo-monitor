@@ -7,7 +7,7 @@ from typing import Tuple
 logger = logging.getLogger(__name__)
 
 # 当前数据库版本
-CURRENT_VERSION = 5
+CURRENT_VERSION = 6
 
 # 迁移脚本
 MIGRATIONS = {
@@ -128,6 +128,17 @@ MIGRATIONS = {
         "INSERT OR IGNORE INTO categories (id, forum, name, slug) VALUES (20, 'linux-do', '软件开发', 'software')",
         "INSERT OR IGNORE INTO categories (id, forum, name, slug) VALUES (60, 'linux-do', '抽奖', 'lottery')",
         "INSERT OR IGNORE INTO categories (id, forum, name, slug) VALUES (107, 'linux-do', '交易', 'trade')",
+    ],
+
+    # 版本 6: 给 subscriptions 和 posts 添加 category_id 字段
+    6: [
+        "ALTER TABLE subscriptions ADD COLUMN category_id INTEGER",
+        "ALTER TABLE posts ADD COLUMN category_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_subscriptions_category ON subscriptions(category_id)",
+        # 更新唯一索引以包含 category_id
+        "DROP INDEX IF EXISTS idx_subscriptions_unique",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_unique ON subscriptions(chat_id, keyword, category_id, forum) WHERE category_id IS NOT NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_unique_null ON subscriptions(chat_id, keyword, forum) WHERE category_id IS NULL",
     ],
 }
 
