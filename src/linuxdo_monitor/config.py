@@ -91,6 +91,16 @@ class ForumConfig(BaseModel):
         description="Whether to enable caching (disable for debugging)"
     )
 
+    recommended_keywords: List[str] = Field(
+        default=["claude", "gemini", "codex", "抽奖", "订阅"],
+        description="Recommended keywords for quick subscription"
+    )
+
+    recommended_users: List[str] = Field(
+        default=["neo", "hubentuan", "kkkyyx"],
+        description="Recommended users for quick subscription"
+    )
+
 
 class AppConfig(BaseModel):
     """Application configuration - supports both legacy and multi-forum formats"""
