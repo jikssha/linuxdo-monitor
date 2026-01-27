@@ -505,6 +505,8 @@ def run(config_dir, web_port, web_password):
     from .database import Database
 
     db = Database(config_manager.get_db_path())
+    # Ensure database is initialized
+    db._init_db()
     app = MultiForumApplication(
         config=cfg,
         db=db,
