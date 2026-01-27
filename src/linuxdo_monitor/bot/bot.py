@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import Forbidden, TelegramError, TimedOut, NetworkError
 from telegram.request import HTTPXRequest
