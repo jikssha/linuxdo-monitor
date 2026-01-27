@@ -133,7 +133,10 @@ class Application:
             self.db,
             forum_id=self.forum_id,
             forum_name=self.forum_name,
-            cache=self.cache  # Pass shared cache to bot
+            forum_name=self.forum_name,
+            cache=self.cache,  # Pass shared cache to bot
+            recommended_keywords=forum_config.recommended_keywords if hasattr(forum_config, "recommended_keywords") else None,
+            recommended_users=forum_config.recommended_users if hasattr(forum_config, "recommended_users") else None
         )
         self.source = create_source(forum_config)
         self.source = create_source(forum_config)
@@ -706,7 +709,10 @@ class Application:
             self.db,
             forum_id=self.forum_id,
             forum_name=self.forum_name,
-            cache=self.cache  # Pass shared cache
+            forum_name=self.forum_name,
+            cache=self.cache,  # Pass shared cache
+            recommended_keywords=self.forum_config.recommended_keywords if hasattr(self.forum_config, "recommended_keywords") else None,
+            recommended_users=self.forum_config.recommended_users if hasattr(self.forum_config, "recommended_users") else None
         )
         self.source = create_source(self.forum_config)
 
