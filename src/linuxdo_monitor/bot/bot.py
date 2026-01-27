@@ -75,7 +75,24 @@ class TelegramBot:
         # Handle inline keyboard callbacks
         self.application.add_handler(CallbackQueryHandler(self.handlers.handle_callback))
 
+        # Register error handler
+        self.application.add_error_handler(self.error_handler)
+
         return self.application
+
+    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Log the error and send a telegram message to notify the developer."""
+        logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+        
+        # Optional: sending message to user
+        if isinstance(update, Update) and update.effective_message:
+            try:
+                await update.effective_message.reply_text(
+                    "❌ 抱歉，处理命令时发生了内部错误。\n"
+                    "已记录错误日志，请联系管理员。"
+                )
+            except:
+                pass
 
     async def _send_with_retry(self, chat_id: int, message: str, disable_preview: bool = False) -> bool:
         """带重试机制的消息发送
