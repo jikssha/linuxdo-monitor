@@ -255,7 +255,8 @@ class Database:
                     id=cursor.lastrowid,
                     chat_id=chat_id,
                     keyword=keyword.lower(),
-                    created_at=datetime.fromisoformat(now)
+                    created_at=datetime.fromisoformat(now),
+                    category_id=kwargs.get('category_id')
                 )
             except sqlite3.IntegrityError:
                 return None
@@ -286,12 +287,10 @@ class Database:
             ).fetchall()
         return [
             Subscription(
+                id=row["id"],
                 chat_id=row["chat_id"],
                 keyword=row["keyword"],
-                # category_id might be missing in updated code if not added to Subscription model yet
-                # We should update database.py to handle Subscription having category_id, 
-                # but Subscription model is in models.py. 
-                # Let's check models.py first? No, we are in database.py.
+                category_id=row["category_id"] if "category_id" in row.keys() else None,
                 created_at=datetime.fromisoformat(row["created_at"])
             )
             for row in rows
