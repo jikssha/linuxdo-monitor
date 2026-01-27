@@ -133,7 +133,6 @@ class Application:
             self.db,
             forum_id=self.forum_id,
             forum_name=self.forum_name,
-            forum_name=self.forum_name,
             cache=self.cache,  # Pass shared cache to bot
             recommended_keywords=forum_config.recommended_keywords if hasattr(forum_config, "recommended_keywords") else None,
             recommended_users=forum_config.recommended_users if hasattr(forum_config, "recommended_users") else None
@@ -708,7 +707,6 @@ class Application:
             self.forum_config.bot_token,
             self.db,
             forum_id=self.forum_id,
-            forum_name=self.forum_name,
             forum_name=self.forum_name,
             cache=self.cache,  # Pass shared cache
             recommended_keywords=self.forum_config.recommended_keywords if hasattr(self.forum_config, "recommended_keywords") else None,
