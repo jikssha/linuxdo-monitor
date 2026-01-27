@@ -578,7 +578,8 @@ class BotHandlers:
             await query.edit_message_text("❌ 已取消添加")
 
         # Keep legacy del_kw for backward compatibility or if /del command uses it (it doesn't, /del is command)
-        elif query.data.startswith("del_kw:"):
+        # elif query.data.startswith("del_kw:"):
+        #     pass
 
         elif query.data.startswith("confirm_kw:"):
             await safe_answer()
