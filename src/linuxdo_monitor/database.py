@@ -175,7 +175,7 @@ class Database:
             if row and row[0]:
                 current_version = row[0]
             
-            target_version = 1
+            target_version = 5
             if current_version < target_version:
                 logger = logging.getLogger(__name__)
                 logger.info(f"Database migration needed: v{current_version} -> v{target_version}")
@@ -200,8 +200,10 @@ class Database:
 
                     # Record migration
                     now = datetime.now().isoformat()
-                    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)", (1, now))
-                    logger.info("Database migrated to v1")
+                    # Record migration
+                    now = datetime.now().isoformat()
+                    conn.execute("INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)", (target_version, now))
+                    logger.info(f"Database initialized to v{target_version}")
                     
         except Exception as e:
             # Log error but don't fail, as tables might be locked or issues might be minor
