@@ -1,0 +1,2 @@
+recursive-include src/linuxdo_monitor/templates *
+recursive-include src/linuxdo_monitor/static *
