@@ -1,6 +1,7 @@
 import logging
 from functools import wraps
 from typing import Optional
+import uuid
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
@@ -12,16 +13,13 @@ from ..matcher.keyword import is_regex_pattern, validate_regex
 logger = logging.getLogger(__name__)
 
 # Maximum keywords per user
-MAX_KEYWORDS_PER_USER = 5
+MAX_KEYWORDS_PER_USER = 50
 # Maximum authors per user
-MAX_AUTHORS_PER_USER = 5
+MAX_AUTHORS_PER_USER = 50
 # Maximum keyword length (callback_data limit is 64 bytes, prefix "del_kw:" is 7 bytes)
 MAX_KEYWORD_LENGTH = 50
 
-# 推荐关键词（用于快捷订阅）
-RECOMMENDED_KEYWORDS = ["claude", "红包", "kiro", "gemini", "公益"]
-# 推荐用户（用于快捷订阅）
-RECOMMENDED_USERS = ["zhuxian123", "jason_wong1", "bytebender", "henryxiaoyang"]
+
 
 
 def require_registration(func):
@@ -43,11 +41,25 @@ def require_registration(func):
 class BotHandlers:
     """Telegram bot command handlers with multi-forum support"""
 
-    def __init__(self, db: Database, forum_id: str = "linux-do", forum_name: str = "Linux.do", cache: AppCache = None):
+    def __init__(self, db: Database, forum_id: str = "linux-do", forum_name: str = "Linux.do", cache: AppCache = None, recommended_keywords: list = None, recommended_users: list = None):
         self.db = db
         self.forum_id = forum_id
         self.forum_name = forum_name
         self.cache = cache or AppCache(forum_id=forum_id)  # Use shared cache if provided
+        self.recommended_keywords = recommended_keywords or []
+        self.recommended_users = recommended_users or []
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /start command - register user"""
+        chat_id = update.effective_chat.id
+        logger.info(f"[{self.forum_id}] /start 命令: chat_id={chat_id}")
+        self.db.add_user(chat_id, forum=self.forum_id)
+        logger.info(f"[{self.forum_id}] 用户已添加到数据库: chat_id={chat_id}, forum={self.forum_id}")
+        # 用户回来了，清除封禁标记
+        self.db.unmark_user_blocked(chat_id, forum=self.forum_id)
+        # Clear cache on user registration for safety
+        self.cache.invalidate_keywords()
+        self.cache.invalidate_subscribe_all()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command - register user"""
@@ -62,12 +74,26 @@ class BotHandlers:
         self.cache.invalidate_subscribe_all()
 
         # 快捷订阅按钮
-        keyboard = [
-            [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in RECOMMENDED_KEYWORDS[:3]],
-            [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in RECOMMENDED_KEYWORDS[3:]],
-            [InlineKeyboardButton(f"@{u}", callback_data=f"quick_user:{u}") for u in RECOMMENDED_USERS[:2]],
-            [InlineKeyboardButton(f"@{u}", callback_data=f"quick_user:{u}") for u in RECOMMENDED_USERS[2:]]
-        ]
+        keyboard = []
+        # Keywords
+        if self.recommended_keywords:
+            # Split into rows of 2 or 3? Let's try to fit
+            # If 5 items: 3, 2
+            mid = (len(self.recommended_keywords) + 1) // 2
+            # Or just limit max rows?
+            row1 = [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in self.recommended_keywords[:3]]
+            keyboard.append(row1)
+            if len(self.recommended_keywords) > 3:
+                row2 = [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in self.recommended_keywords[3:]]
+                keyboard.append(row2)
+        
+        # Users
+        if self.recommended_users:
+            row1 = [InlineKeyboardButton(f"@{u}", callback_data=f"quick_user:{u}") for u in self.recommended_users[:2]]
+            keyboard.append(row1)
+            if len(self.recommended_users) > 2:
+                row2 = [InlineKeyboardButton(f"@{u}", callback_data=f"quick_user:{u}") for u in self.recommended_users[2:]]
+                keyboard.append(row2)
 
         await update.message.reply_text(
             f"👋 欢迎使用 {self.forum_name} 关键词监控机器人！\n\n"
@@ -157,8 +183,9 @@ class BotHandlers:
             )
             return
 
-        # Store keyword in user_data and ask for category
-        context.user_data["pending_add_keyword"] = keyword
+        # Store keyword in user_data with unique ID to support concurrent adds
+        request_id = str(uuid.uuid4())[:8]
+        context.user_data.setdefault("pending_adds", {})[request_id] = keyword
         
         # Get categories
         categories = self.db.get_all_categories(forum=self.forum_id)
@@ -166,12 +193,12 @@ class BotHandlers:
         # Build category keyboard
         keyboard = []
         # "All Categories" button
-        keyboard.append([InlineKeyboardButton("🌐 所有分类 (全站)", callback_data="sel_cat:0")])
+        keyboard.append([InlineKeyboardButton("🌐 所有分类 (全站)", callback_data=f"sel_cat:0:{request_id}")])
         
         # Category buttons (2 per row)
         row = []
         for cat_id, name in categories.items():
-            row.append(InlineKeyboardButton(name, callback_data=f"sel_cat:{cat_id}"))
+            row.append(InlineKeyboardButton(name, callback_data=f"sel_cat:{cat_id}:{request_id}"))
             if len(row) == 2:
                 keyboard.append(row)
                 row = []
@@ -179,7 +206,7 @@ class BotHandlers:
             keyboard.append(row)
             
         # Cancel button
-        keyboard.append([InlineKeyboardButton("❌ 取消", callback_data="cancel_add_kw")])
+        keyboard.append([InlineKeyboardButton("❌ 取消", callback_data=f"cancel_add_kw:{request_id}")])
         
         await update.message.reply_text(
             f"👇 请为关键词「{keyword}」选择监控分类：",
@@ -268,10 +295,13 @@ class BotHandlers:
 
         if not lines:
             # 空状态引导：显示推荐关键词按钮
-            keyboard = [
-                [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in RECOMMENDED_KEYWORDS[:3]],
-                [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in RECOMMENDED_KEYWORDS[3:]]
-            ]
+            keyboard = []
+            if self.recommended_keywords:
+                row1 = [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in self.recommended_keywords[:3]]
+                keyboard.append(row1)
+                if len(self.recommended_keywords) > 3:
+                     row2 = [InlineKeyboardButton(kw, callback_data=f"quick_kw:{kw}") for kw in self.recommended_keywords[3:]]
+                     keyboard.append(row2)
             return (
                 "📭 您还没有订阅任何关键词\n\n"
                 "⚡ 点击下方按钮快速订阅："
@@ -530,21 +560,32 @@ class BotHandlers:
 
         # Handle category selection
         elif query.data.startswith("sel_cat:"):
-            pending_kw = context.user_data.get("pending_add_keyword")
+            parts = query.data.split(":")
+            if len(parts) >= 3:
+                cat_id_str = parts[1]
+                request_id = parts[2]
+            else:
+                # Fallback for old buttons? Or error
+                # User data structure changed, old buttons won't work anyway
+                await safe_answer("❌ 按钮已过期", show_alert=True)
+                return
+
+            pending_adds = context.user_data.get("pending_adds", {})
+            pending_kw = pending_adds.pop(request_id, None)
+            
+            # Use 'pending_add_keyword' as fallback for very old pending requests (backward compat not strictly needed but safe)
+            if not pending_kw and "pending_add_keyword" in context.user_data:
+                 pending_kw = context.user_data.pop("pending_add_keyword")
+
             if not pending_kw:
                 await safe_answer("❌ 会话已过期，请重新使用 /add 命令", show_alert=True)
                 await query.edit_message_text("❌ 会话已过期，请重新添加")
                 return
             
             await safe_answer()
-            cat_id_str = query.data.split(":")[1]
             category_id = int(cat_id_str) if cat_id_str != "0" else None
             
-            # Clear pending
-            del context.user_data["pending_add_keyword"]
-            
             # Add subscription
-            # Note: add_subscription in database.py needs to support category_id
             subscription = self.db.add_subscription(chat_id, pending_kw, forum=self.forum_id, category_id=category_id)
             
             if subscription:
@@ -571,11 +612,18 @@ class BotHandlers:
             else:
                 await query.edit_message_text(f"⚠️ 您已经订阅了关键词：{pending_kw} (相同分类)")
                 
-        elif query.data == "cancel_add_kw":
-            await safe_answer()
-            if "pending_add_keyword" in context.user_data:
-                del context.user_data["pending_add_keyword"]
-            await query.edit_message_text("❌ 已取消添加")
+        elif query.data.startswith("cancel_add_kw"):
+             # Handle cancel with ID if present
+             parts = query.data.split(":")
+             if len(parts) > 1:
+                 request_id = parts[1]
+                 if "pending_adds" in context.user_data:
+                     context.user_data["pending_adds"].pop(request_id, None)
+             elif "pending_add_keyword" in context.user_data:
+                 del context.user_data["pending_add_keyword"]
+             
+             await safe_answer()
+             await query.edit_message_text("❌ 已取消添加")
 
         # Keep legacy del_kw for backward compatibility or if /del command uses it (it doesn't, /del is command)
         # elif query.data.startswith("del_kw:"):
