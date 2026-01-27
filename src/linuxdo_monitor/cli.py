@@ -442,8 +442,10 @@ def run(config_dir, web_port, web_password):
     config_manager = ConfigManager(config_dir)
 
     if not config_manager.exists():
-        click.echo("❌ 配置文件不存在，请先运行 'linux-do-monitor init'")
-        return
+        click.echo("⚠️ 配置文件不存在，自动初始化为空配置...")
+        # Create empty config
+        empty_config = AppConfig(forums=[])
+        config_manager.save(empty_config)
 
     # 检查数据库版本
     db_path = config_manager.get_db_path()
@@ -486,8 +488,12 @@ def run(config_dir, web_port, web_password):
     # Get enabled forums
     enabled_forums = cfg.get_enabled_forums()
     if not enabled_forums:
-        click.echo("❌ 没有启用的论坛配置")
-        return
+        if web_port:
+            click.echo("⚠️ 没有启用的论坛配置，将以 [Web 仅管理模式] 启动")
+            click.echo(f"请访问 http://localhost:{web_port} 配置服务")
+        else:
+            click.echo("❌ 没有启用的论坛配置，且未指定 --web-port，无法启动")
+            return
 
     click.echo("🚀 启动关键词监控服务...")
     click.echo(f"   启用论坛数: {len(enabled_forums)}")
@@ -519,4 +525,14 @@ def run(config_dir, web_port, web_password):
         web_server.set_update_callback(app.reload_config)
         web_server.start()
 
-    app.run()
+    # Only run app if there are forums, otherwise keep alive for web server
+    if enabled_forums:
+        app.run()
+    else:
+        # Keep alive for web server
+        import time
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
