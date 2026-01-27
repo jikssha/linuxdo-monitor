@@ -175,7 +175,7 @@ class Database:
             if row and row[0]:
                 current_version = row[0]
             
-            target_version = 5
+            target_version = 6
             if current_version < target_version:
                 logger = logging.getLogger(__name__)
                 logger.info(f"Database migration needed: v{current_version} -> v{target_version}")
