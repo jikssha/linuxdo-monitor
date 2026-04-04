@@ -1,9 +1,10 @@
+import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Generator, List, Optional, Tuple
+from typing import Dict, Generator, List, Optional, Set, Tuple
 
 from .models import Post, Subscription, User
 
@@ -330,6 +331,52 @@ class Database:
             except sqlite3.IntegrityError:
                 return False
 
+    def add_posts_batch(
+        self,
+        posts: List[Post],
+        forum: str = DEFAULT_FORUM,
+        batch_size: int = 200,
+    ) -> Set[str]:
+        """Add posts in batches and return the inserted post IDs."""
+        if not posts:
+            return set()
+
+        inserted_ids: Set[str] = set()
+        with self._get_conn() as conn:
+            for i in range(0, len(posts), batch_size):
+                batch = posts[i:i + batch_size]
+                values = []
+                params = []
+
+                for post in batch:
+                    author = getattr(post, 'author', None)
+                    category_id = getattr(post, 'category_id', None)
+                    values.append("(?, ?, ?, ?, ?, ?, ?)")
+                    params.extend(
+                        [
+                            post.id,
+                            forum,
+                            post.title,
+                            post.link,
+                            post.pub_date.isoformat(),
+                            author,
+                            category_id,
+                        ]
+                    )
+
+                rows = conn.execute(
+                    f"""
+                    INSERT INTO posts (id, forum, title, link, pub_date, author, category_id)
+                    VALUES {", ".join(values)}
+                    ON CONFLICT(id, forum) DO NOTHING
+                    RETURNING id
+                    """,
+                    params,
+                ).fetchall()
+                inserted_ids.update(row["id"] for row in rows)
+
+        return inserted_ids
+
     def post_exists(self, post_id: str, forum: str = DEFAULT_FORUM) -> bool:
         """Check if post exists"""
         with self._get_conn() as conn:
@@ -337,6 +384,28 @@ class Database:
                 "SELECT 1 FROM posts WHERE id = ? AND forum = ?", (post_id, forum)
             ).fetchone()
         return row is not None
+
+    def get_existing_post_ids(
+        self,
+        post_ids: List[str],
+        forum: str = DEFAULT_FORUM,
+        batch_size: int = 500,
+    ) -> Set[str]:
+        """Get the subset of post IDs that already exist for a forum."""
+        if not post_ids:
+            return set()
+
+        existing_ids: Set[str] = set()
+        with self._get_conn() as conn:
+            for i in range(0, len(post_ids), batch_size):
+                batch = post_ids[i:i + batch_size]
+                placeholders = ", ".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"SELECT id FROM posts WHERE forum = ? AND id IN ({placeholders})",
+                    (forum, *batch),
+                ).fetchall()
+                existing_ids.update(row["id"] for row in rows)
+        return existing_ids
 
     # Notification operations
     def add_notification(self, chat_id: int, post_id: str, keyword: str, forum: str = DEFAULT_FORUM) -> bool:
@@ -351,6 +420,41 @@ class Database:
                 return True
             except sqlite3.IntegrityError:
                 return False
+
+    def add_notifications_batch(
+        self,
+        notifications: List[Tuple[int, str, str]],
+        forum: str = DEFAULT_FORUM,
+        batch_size: int = 200,
+    ) -> int:
+        """Add notification records in batches and return inserted row count."""
+        if not notifications:
+            return 0
+
+        inserted_count = 0
+        with self._get_conn() as conn:
+            for i in range(0, len(notifications), batch_size):
+                batch = notifications[i:i + batch_size]
+                now = datetime.now().isoformat()
+                values = []
+                params = []
+
+                for chat_id, post_id, keyword in batch:
+                    values.append("(?, ?, ?, ?, ?)")
+                    params.extend([chat_id, post_id, keyword, forum, now])
+
+                rows = conn.execute(
+                    f"""
+                    INSERT INTO notifications (chat_id, post_id, keyword, forum, created_at)
+                    VALUES {", ".join(values)}
+                    ON CONFLICT(chat_id, post_id, keyword, forum) DO NOTHING
+                    RETURNING 1
+                    """,
+                    params,
+                ).fetchall()
+                inserted_count += len(rows)
+
+        return inserted_count
 
     def notification_exists(self, chat_id: int, post_id: str, keyword: str, forum: str = DEFAULT_FORUM) -> bool:
         """Check if notification was already sent for specific keyword"""
@@ -369,6 +473,35 @@ class Database:
                 (chat_id, post_id, forum)
             ).fetchone()
         return row is not None
+
+    def get_notified_users_for_posts(
+        self,
+        post_ids: List[str],
+        forum: str = DEFAULT_FORUM,
+        batch_size: int = 500,
+    ) -> Dict[str, Set[int]]:
+        """Get already-notified users for each post ID in a forum."""
+        if not post_ids:
+            return {}
+
+        notified_by_post: Dict[str, Set[int]] = {}
+        with self._get_conn() as conn:
+            for i in range(0, len(post_ids), batch_size):
+                batch = post_ids[i:i + batch_size]
+                placeholders = ", ".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"""
+                    SELECT post_id, chat_id
+                    FROM notifications
+                    WHERE forum = ? AND post_id IN ({placeholders})
+                    """,
+                    (forum, *batch),
+                ).fetchall()
+                for row in rows:
+                    notified_by_post.setdefault(row["post_id"], set()).add(
+                        row["chat_id"]
+                    )
+        return notified_by_post
 
     # Subscribe all operations
     def add_subscribe_all(self, chat_id: int, forum: str = DEFAULT_FORUM) -> bool:

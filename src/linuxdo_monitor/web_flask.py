@@ -1,8 +1,6 @@
 """Flask-based Web configuration management UI"""
 import json
 import logging
-import os
-import secrets
 import threading
 from functools import wraps
 from pathlib import Path
@@ -10,8 +8,11 @@ from typing import Callable, Optional
 
 from flask import Flask, Blueprint, render_template, request, redirect, url_for, jsonify, flash, session
 
-from .cache import get_cache
-from .utils import extract_json_from_html, normalize_cookie, extract_needed_cookies, generate_random_password
+from .utils import (
+    extract_json_from_html,
+    extract_needed_cookies,
+    generate_random_password,
+)
 
 logger = logging.getLogger(__name__)
 

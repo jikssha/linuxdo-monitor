@@ -3,7 +3,7 @@ import logging
 import logging.handlers
 import signal
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -138,13 +138,10 @@ class Application:
             recommended_users=forum_config.recommended_users if hasattr(forum_config, "recommended_users") else None
         )
         self.source = create_source(forum_config)
-        self.source = create_source(forum_config)
         self.matcher = KeywordMatcher()
         self.scheduler = AsyncIOScheduler()
         self._cookie_fail_count = 0  # 连续失败计数器
-        self._cookie_fail_count = 0  # 连续失败计数器
         self._cookie_fail_threshold = 5  # 连续失败阈值
-        self._cookie_notify_round = 0  # 第几轮通知
         self._fetch_fail_count = 0  # 拉取失败计数器
         self._fetch_fail_threshold = 5  # 拉取连续失败阈值
         self._fetch_fail_notified = False  # 是否已发送拉取失败告警
@@ -175,7 +172,6 @@ class Application:
         self.source = create_source(new_forum_config)
         # Reset cookie invalid state on config reload
         self._cookie_fail_count = 0
-        self._cookie_notify_round = 0
         # Reset fetch fail state on config reload
         self._fetch_fail_count = 0
         self._fetch_fail_notified = False
@@ -262,10 +258,6 @@ class Application:
         result = test_cookie(self.forum_config.discourse_cookie, self.forum_config.discourse_url, self.forum_config.flaresolverr_url)
         return result
 
-    def _fallback_to_rss(self) -> BaseSource:
-        """Create RSS fallback source (deprecated, kept for compatibility)"""
-        return RSSSource(url=self.forum_config.rss_url)
-
     async def _check_cookie_task(self) -> None:
         """独立的 Cookie 检测任务"""
         if self.forum_config.source_type != SourceType.DISCOURSE:
@@ -313,10 +305,6 @@ class Application:
         else:
             # 检测通过
             logger.info(f"[{self.forum_id}] ✅ Cookie 检测通过，状态有效")
-            if self._cookie_fail_count > 0:
-                logger.info(f"[{self.forum_id}] ✅ Cookie 检测恢复正常（之前失败 {self._cookie_fail_count} 轮）")
-                await self._notify_admin(f"✅ [{self.forum_name}] Cookie 已恢复有效，之前的告警可以忽略了")
-                self._cookie_fail_count = 0
             if self._cookie_fail_count > 0:
                 logger.info(f"[{self.forum_id}] ✅ Cookie 检测恢复正常（之前失败 {self._cookie_fail_count} 轮）")
                 await self._notify_admin(f"✅ [{self.forum_name}] Cookie 已恢复有效，之前的告警可以忽略了")
@@ -391,22 +379,35 @@ class Application:
         self.cache.set_author_subscribers(author, subscribers)
         return subscribers
 
-    async def _send_batch(self, tasks: List[Tuple]) -> int:
+    async def _send_batch(
+        self,
+        tasks: List[Tuple],
+        category_names: Optional[Dict[int, str]] = None,
+    ) -> List[Tuple[int, str, str]]:
         """Send a batch of notifications concurrently.
 
         Args:
             tasks: List of (chat_id, post, keyword_or_none) tuples
+            category_names: Optional preloaded category name map for this forum
 
         Returns:
-            Number of successfully sent notifications
+            Successfully sent notification records as
+            (chat_id, post_id, keyword_or_none)
         """
         if not tasks:
-            return 0
+            return []
 
-        async def send_one(chat_id: int, post: Post, keyword: Optional[str]) -> bool:
+        category_names = category_names or {}
+
+        async def send_one(
+            chat_id: int,
+            post: Post,
+            keyword: Optional[str],
+        ) -> Optional[Tuple[int, str, str]]:
             try:
-                # Get category name from database
-                category_name = self.db.get_category_name(post.category_id, self.forum_id) if post.category_id else None
+                category_name = (
+                    category_names.get(post.category_id) if post.category_id else None
+                )
 
                 if keyword:
                     success = await self.bot.send_notification(
@@ -417,12 +418,11 @@ class Application:
                         chat_id, post.title, post.link, category_name=category_name
                     )
                 if success:
-                    # Record notification in DB
-                    self.db.add_notification(chat_id, post.id, keyword or "__ALL__", forum=self.forum_id)
-                return success
+                    return (chat_id, post.id, keyword or "__ALL__")
+                return None
             except Exception as e:
                 logger.error(f"[{self.forum_id}] 发送失败 {chat_id}: {e}")
-                return False
+                return None
 
         # Execute batch concurrently
         results = await asyncio.gather(
@@ -430,8 +430,11 @@ class Application:
             return_exceptions=True
         )
 
-        success_count = sum(1 for r in results if r is True)
-        return success_count
+        return [
+            result
+            for result in results
+            if isinstance(result, tuple) and len(result) == 3
+        ]
 
     async def fetch_and_notify(self) -> None:
         """Fetch posts and send notifications"""
@@ -445,28 +448,37 @@ class Application:
             # Use cached data
             keywords = self._get_keywords_cached()
             subscribe_all_users = self._get_subscribe_all_users_cached()
-            subscribe_all_set: Set[int] = set(subscribe_all_users)
-            subscribed_authors = self._get_subscribed_authors_cached()
-
-            new_posts = []
+            subscribed_authors = set(self._get_subscribed_authors_cached())
+            post_ids = [post.id for post in posts]
+            known_post_ids = self.db.get_existing_post_ids(post_ids, forum=self.forum_id)
+            candidate_posts = []
             pending_tasks: List[Tuple] = []  # (chat_id, post, keyword_or_none)
 
             for post in posts:
-                # Skip if post already processed
-                if self.db.post_exists(post.id, forum=self.forum_id):
+                # Skip if post already processed or duplicated in the same fetch result
+                if post.id in known_post_ids:
                     continue
 
-                new_posts.append(post)
-                self.db.add_post(post, forum=self.forum_id)
+                known_post_ids.add(post.id)
+                candidate_posts.append(post)
 
-                # Track users already notified for this post (in this cycle)
-                notified_users: Set[int] = set()
+            inserted_post_ids = self.db.add_posts_batch(
+                candidate_posts,
+                forum=self.forum_id,
+            )
+            new_posts = [post for post in candidate_posts if post.id in inserted_post_ids]
+            notified_by_post = self.db.get_notified_users_for_posts(
+                [post.id for post in new_posts],
+                forum=self.forum_id,
+            )
+
+            for post in new_posts:
+                # Track users already notified for this post (historical + this cycle)
+                notified_users: Set[int] = set(notified_by_post.get(post.id, set()))
 
                 # Collect subscribe_all notifications
                 for chat_id in subscribe_all_users:
-                    # Check DB for existing notification
-                    if self.db.notification_exists_for_post(chat_id, post.id, forum=self.forum_id):
-                        notified_users.add(chat_id)
+                    if chat_id in notified_users:
                         continue
                     pending_tasks.append((chat_id, post, None))
                     notified_users.add(chat_id)
@@ -478,13 +490,7 @@ class Application:
                     if author_lower in subscribed_authors:
                         subscribers = self._get_author_subscribers_cached(author_lower)
                         for chat_id in subscribers:
-                            # Skip if already notified
                             if chat_id in notified_users:
-                                continue
-                            if chat_id in subscribe_all_set:
-                                continue
-                            if self.db.notification_exists_for_post(chat_id, post.id, forum=self.forum_id):
-                                notified_users.add(chat_id)
                                 continue
                             # Use special keyword format for author subscription
                             pending_tasks.append((chat_id, post, f"@{post.author}"))
@@ -509,22 +515,27 @@ class Application:
                             # Skip if already notified (subscribe_all or another keyword)
                             if chat_id in notified_users:
                                 continue
-                            # Skip if already in subscribe_all
-                            if chat_id in subscribe_all_set:
-                                continue
-                            # Check DB for existing notification for this post
-                            if self.db.notification_exists_for_post(chat_id, post.id, forum=self.forum_id):
-                                notified_users.add(chat_id)
-                                continue
 
                             pending_tasks.append((chat_id, post, keyword))
                             notified_users.add(chat_id)
 
             # Send notifications in batches
             total_sent = 0
+            category_names = (
+                self.db.get_all_categories(forum=self.forum_id) if pending_tasks else {}
+            )
             for i in range(0, len(pending_tasks), BATCH_SIZE):
                 batch = pending_tasks[i:i + BATCH_SIZE]
-                sent = await self._send_batch(batch)
+                sent_notifications = await self._send_batch(
+                    batch,
+                    category_names=category_names,
+                )
+                if sent_notifications:
+                    self.db.add_notifications_batch(
+                        sent_notifications,
+                        forum=self.forum_id,
+                    )
+                sent = len(sent_notifications)
                 total_sent += sent
 
                 if sent > 0:
@@ -689,7 +700,6 @@ class Application:
         """Reset application state for restart"""
         # Reset failure counters
         self._cookie_fail_count = 0
-        self._cookie_notify_round = 0
         self._fetch_fail_count = 0
         self._fetch_fail_notified = False
 

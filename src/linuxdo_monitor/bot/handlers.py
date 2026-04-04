@@ -539,20 +539,9 @@ class BotHandlers:
             await safe_answer()
             try:
                 sub_id = int(query.data.split(":")[1])
-                # We need a delete_subscription_by_id in DB
                 if self.db.remove_subscription_by_id(sub_id, forum=self.forum_id):
                     self.cache.invalidate_keywords()
-                    # We don't know keyword to invalidate subscribers cache specifically without fetching first.
-                    # It's safer to invalidate all or fetch first.
-                    # Let's just invalidate all keywords for now or improve DB method to return deleted keyword.
-                    # For now just invalidate global keywords (it's list of strings). 
-                    # And subscribers specific? 
-                    # We can clear all subscribers cache or accept slight inconsistency.
-                    # Or we add remove_subscription_by_id returning the keyword.
-                    
-                    # Pending: Modify database.py to add remove_subscription_by_id
-                    pass
-                    
+
                 text, keyboard = self._build_keyword_list_message(chat_id)
                 await query.edit_message_text(text, reply_markup=keyboard)
             except ValueError:
@@ -624,10 +613,6 @@ class BotHandlers:
              
              await safe_answer()
              await query.edit_message_text("❌ 已取消添加")
-
-        # Keep legacy del_kw for backward compatibility or if /del command uses it (it doesn't, /del is command)
-        # elif query.data.startswith("del_kw:"):
-        #     pass
 
         elif query.data.startswith("confirm_kw:"):
             await safe_answer()

@@ -10,8 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件
-# 复制依赖文件
-COPY pyproject.toml MANIFEST.in ./
+COPY pyproject.toml MANIFEST.in README.md ./
 COPY src/ ./src/
 
 # 创建虚拟环境并安装依赖
