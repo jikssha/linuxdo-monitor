@@ -1,70 +1,51 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>登录 - Forum Monitor</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            display: flex;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .login-card {
-            max-width: 400px;
-            margin: auto;
-            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-        }
-        .login-header {
-            background-color: #0d6efd;
-            color: white;
-            padding: 2rem;
-            text-align: center;
-        }
-        .login-header i {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card login-card">
-            <div class="login-header">
-                <i class="bi bi-broadcast"></i>
-                <h4 class="mb-0">Forum Monitor</h4>
-            </div>
-            <div class="card-body p-4">
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% if messages %}
-                        {% for category, message in messages %}
-                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                                {{ message }}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                            </div>
-                        {% endfor %}
-                    {% endif %}
-                {% endwith %}
+{% extends "base.html" %}
+{% set hide_nav = true %}
+{% block title %}登录 - Linux.do Monitor{% endblock %}
 
-                <form method="post">
-                    <div class="mb-3">
-                        <label for="password" class="form-label">密码</label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                            <input type="password" class="form-control" id="password" name="password"
-                                   placeholder="请输入管理密码" autofocus required>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-box-arrow-in-right"></i> 登录
-                    </button>
-                </form>
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<section class="auth-layout">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-icon">
+                <i class="bi bi-shield-lock"></i>
             </div>
+            <div class="eyebrow">
+                <i class="bi bi-stars"></i> Secure Console Access
+            </div>
+            <h1 class="auth-title">进入监控控制台</h1>
+            <p class="auth-subtitle">
+                登录后你可以统一管理论坛配置、SQL 查询、用户统计和运行状态。
+            </p>
+        </div>
+        <div class="card-body pt-0 px-4 pb-4">
+            <form method="post" class="section-grid">
+                <div>
+                    <label for="password" class="label-inline">
+                        <i class="bi bi-key"></i> 管理密码
+                    </label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                        <input
+                            type="password"
+                            class="form-control"
+                            id="password"
+                            name="password"
+                            placeholder="请输入管理密码"
+                            autofocus
+                            required
+                        >
+                    </div>
+                    <div class="form-text">
+                        首次启动后可在 <code>data/config.json</code> 中找到自动生成的 Web 管理密码。
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-box-arrow-in-right"></i> 登录控制台
+                </button>
+            </form>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+</section>
+{% endblock %}

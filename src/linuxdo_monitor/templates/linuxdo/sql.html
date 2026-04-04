@@ -1,103 +1,137 @@
 {% extends "base.html" %}
 {% set active_page = 'sql' %}
-{% block title %}SQL 查询 - Forum Monitor{% endblock %}
+{% block title %}SQL 查询 - Linux.do Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sql-editor {
+        min-height: 220px !important;
+        padding: 1rem;
+        font-size: 0.95rem;
+        line-height: 1.7;
+        background: rgba(10, 29, 36, 0.9) !important;
+        border-color: rgba(0, 163, 163, 0.18);
+        color: #dff8fb;
+    }
+
+    .sql-editor::placeholder {
+        color: rgba(223, 248, 251, 0.55);
+    }
+
+    .quick-query-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.7rem;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
-                <li class="breadcrumb-item active">SQL 查询</li>
-            </ol>
-        </nav>
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">工作台</a></li>
+        <li class="breadcrumb-item active">SQL 查询</li>
+    </ol>
+</nav>
+
+<section class="page-hero">
+    <div>
+        <div class="eyebrow">
+            <i class="bi bi-terminal-fill"></i> Query Console
+        </div>
+        <h1 class="hero-title">数据库查询控制台</h1>
+        <p class="hero-subtitle">
+            用于快速检查表结构、用户、订阅和发送记录。默认只读模式更安全，管理员模式只建议在明确知道后果时使用。
+        </p>
     </div>
-</div>
+    <div class="hero-actions">
+        {% if admin_mode %}
+        <span class="status-pill" style="background: rgba(178, 75, 70, 0.12); color: var(--danger);">
+            <i class="bi bi-exclamation-triangle"></i> 管理员模式
+        </span>
+        {% else %}
+        <span class="status-pill primary">
+            <i class="bi bi-shield-check"></i> 只读模式
+        </span>
+        {% endif %}
+    </div>
+</section>
 
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-database"></i> SQL 查询
-                {% if admin_mode %}
-                <span class="badge bg-danger ms-2">管理员模式</span>
-                {% else %}
-                <span class="badge bg-warning text-dark ms-2">只读模式</span>
-                {% endif %}
+<section class="surface-card">
+    <div class="card-header">
+        <span><i class="bi bi-database"></i> SQL 查询</span>
+        {% if admin_mode %}
+        <span class="badge bg-danger">Writable</span>
+        {% else %}
+        <span class="badge bg-warning text-dark">Read Only</span>
+        {% endif %}
+    </div>
+    <div class="card-body section-grid">
+        {% if admin_mode %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i>
+            <strong>管理员模式：</strong> 当前允许执行 INSERT、UPDATE、DELETE 等写入语句，请务必确认目标 SQL 与影响范围。
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i>
+            <strong>安全限制：</strong> 只允许 SELECT 查询。若必须写入，请切换到管理员模式后再操作。
+            <a href="{{ url_for('linuxdo.sql_page', admin=admin_password) }}" class="alert-link">进入管理员模式</a>
+        </div>
+        {% endif %}
+
+        <section>
+            <h2 class="section-title">常用查询</h2>
+            <p class="section-subtitle">点一下即可填充查询模板，适合日常巡检、排障和抽样查看。</p>
+            <div class="quick-query-grid">
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT name FROM sqlite_master WHERE type=\\'table\\'')">查看所有表</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM users LIMIT 50')">用户列表</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM subscriptions LIMIT 50')">关键词订阅</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM user_subscriptions LIMIT 50')">作者订阅</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM subscribe_all LIMIT 50')">全部订阅</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM posts ORDER BY pub_date DESC LIMIT 50')">最新帖子</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50')">发送记录</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT forum, COUNT(*) as count FROM users GROUP BY forum')">用户统计</button>
             </div>
-            <div class="card-body">
-                {% if admin_mode %}
-                <div class="alert alert-danger">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    <strong>管理员模式:</strong> 可执行所有 SQL 语句，包括 INSERT/UPDATE/DELETE。请谨慎操作！
-                </div>
-                {% else %}
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle"></i>
-                    <strong>安全限制:</strong> 只允许 SELECT 查询语句，禁止修改数据。
-                    <a href="{{ url_for('linuxdo.sql_page', admin=admin_password) }}" class="alert-link">进入管理员模式</a>
-                </div>
-                {% endif %}
+        </section>
 
-                <div class="mb-3">
-                    <label class="form-label">常用查询:</label>
-                    <div class="btn-group btn-group-sm flex-wrap" role="group">
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT name FROM sqlite_master WHERE type=\'table\'')">
-                            查看所有表
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM users LIMIT 50')">
-                            用户列表
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM subscriptions LIMIT 50')">
-                            关键词订阅
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM user_subscriptions LIMIT 50')">
-                            作者订阅
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM subscribe_all LIMIT 50')">
-                            全部订阅
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM posts ORDER BY pub_date DESC LIMIT 50')">
-                            最新帖子
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50')">
-                            发送记录
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="setQuery('SELECT forum, COUNT(*) as count FROM users GROUP BY forum')">
-                            用户统计
-                        </button>
-                    </div>
-                </div>
+        <section>
+            <label for="sql-input" class="label-inline">
+                <i class="bi bi-code-square"></i> SQL 语句
+            </label>
+            <textarea
+                class="form-control font-monospace sql-editor"
+                id="sql-input"
+                rows="6"
+                placeholder="SELECT * FROM users LIMIT 10"
+            ></textarea>
+            <div class="form-text">支持使用 <code>Ctrl + Enter</code> 快速执行。</div>
+        </section>
 
-                <div class="mb-3">
-                    <label for="sql-input" class="form-label">SQL 语句:</label>
-                    <textarea class="form-control font-monospace" id="sql-input" rows="4" placeholder="SELECT * FROM users LIMIT 10"></textarea>
-                </div>
+        <div class="d-flex flex-wrap gap-3">
+            <button type="button" class="btn btn-primary" onclick="executeQuery()">
+                <i class="bi bi-play-fill"></i> 执行查询
+            </button>
+            <button type="button" class="btn btn-outline-secondary" onclick="clearResult()">
+                <i class="bi bi-x-circle"></i> 清除结果
+            </button>
+        </div>
 
-                <button type="button" class="btn btn-primary" onclick="executeQuery()">
-                    <i class="bi bi-play-fill"></i> 执行查询
-                </button>
-                <button type="button" class="btn btn-outline-secondary" onclick="clearResult()">
-                    <i class="bi bi-x-circle"></i> 清除结果
-                </button>
-
-                <div id="result-area" class="mt-4" style="display: none;">
-                    <div id="result-info" class="mb-2"></div>
-                    <div class="table-responsive">
-                        <table class="table table-striped table-bordered table-sm" id="result-table">
-                            <thead id="result-thead"></thead>
-                            <tbody id="result-tbody"></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div id="error-area" class="mt-4" style="display: none;">
-                    <div class="alert alert-danger" id="error-message"></div>
-                </div>
+        <div id="result-area" style="display: none;">
+            <div id="result-info" class="mb-3"></div>
+            <div class="table-responsive">
+                <table class="table table-striped table-bordered table-sm" id="result-table">
+                    <thead id="result-thead"></thead>
+                    <tbody id="result-tbody"></tbody>
+                </table>
             </div>
         </div>
+
+        <div id="error-area" style="display: none;">
+            <div class="alert alert-danger" id="error-message"></div>
+        </div>
     </div>
-</div>
+</section>
 {% endblock %}
 
 {% block extra_js %}
@@ -142,7 +176,6 @@ async function executeQuery() {
             if (data.columns) {
                 showResult(data);
             } else {
-                // Non-SELECT result
                 showMessage(data.message);
             }
         } else {
@@ -159,13 +192,8 @@ function showResult(data) {
     const thead = document.getElementById('result-thead');
     const tbody = document.getElementById('result-tbody');
 
-    // Show row count
-    resultInfo.innerHTML = `<span class="badge bg-success">查询成功</span> 返回 ${data.row_count} 行`;
-
-    // Build table header
+    resultInfo.innerHTML = `<span class="status-pill primary"><i class="bi bi-check2-circle"></i> 查询成功 · ${data.row_count} 行</span>`;
     thead.innerHTML = '<tr>' + data.columns.map(col => `<th>${escapeHtml(col)}</th>`).join('') + '</tr>';
-
-    // Build table body
     tbody.innerHTML = data.data.map(row => {
         return '<tr>' + data.columns.map(col => {
             const val = row[col];
@@ -190,7 +218,7 @@ function showMessage(message) {
     const thead = document.getElementById('result-thead');
     const tbody = document.getElementById('result-tbody');
 
-    resultInfo.innerHTML = `<span class="badge bg-success">执行成功</span> ${escapeHtml(message)}`;
+    resultInfo.innerHTML = `<span class="status-pill primary"><i class="bi bi-check2-circle"></i> 执行成功</span> <span class="ms-2">${escapeHtml(message)}</span>`;
     thead.innerHTML = '';
     tbody.innerHTML = '';
     resultArea.style.display = 'block';
@@ -202,7 +230,6 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Ctrl+Enter to execute
 document.getElementById('sql-input').addEventListener('keydown', function(e) {
     if (e.ctrlKey && e.key === 'Enter') {
         executeQuery();

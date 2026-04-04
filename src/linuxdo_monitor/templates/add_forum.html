@@ -1,136 +1,200 @@
 {% extends "base.html" %}
-{% block title %}添加论坛 - Forum Monitor{% endblock %}
+{% set active_page = 'dashboard' %}
+{% block title %}添加论坛 - Linux.do Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .helper-stack {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .helper-item code {
+        display: block;
+        margin-top: 0.45rem;
+        white-space: normal;
+        word-break: break-all;
+        color: var(--primary-strong);
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
-                <li class="breadcrumb-item active">添加论坛</li>
-            </ol>
-        </nav>
-    </div>
-</div>
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">工作台</a></li>
+        <li class="breadcrumb-item active">添加论坛</li>
+    </ol>
+</nav>
 
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card">
+<section class="page-hero">
+    <div>
+        <div class="eyebrow">
+            <i class="bi bi-node-plus-fill"></i> Expansion Flow
+        </div>
+        <h1 class="hero-title">接入新的论坛节点</h1>
+        <p class="hero-subtitle">
+            为每个论坛创建独立机器人、独立抓取配置和独立数据隔离。整个流程被收敛成一张表单，避免首次接入时来回切换多个页面。
+        </p>
+    </div>
+    <div class="hero-actions">
+        <a href="{{ url_for('index') }}" class="status-pill">
+            <i class="bi bi-arrow-left"></i> 返回工作台
+        </a>
+        <span class="status-pill primary">
+            <i class="bi bi-lightning-charge"></i> 约 2 分钟完成
+        </span>
+    </div>
+</section>
+
+<section class="row g-4">
+    <div class="col-xl-8">
+        <div class="surface-card">
             <div class="card-header">
-                <i class="bi bi-plus-circle"></i> 添加新论坛
+                <span><i class="bi bi-plus-circle"></i> 添加新论坛</span>
+                <span class="badge bg-light text-dark">Create</span>
             </div>
             <div class="card-body">
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i>
-                    <strong>提示:</strong> 每个论坛需要一个独立的 Telegram Bot。请先在 @BotFather 创建新 Bot。
+                    <strong>接入前提示：</strong> 每个论坛建议使用独立的 Telegram Bot，避免通知来源混淆。
                 </div>
 
-                <form method="POST" action="{{ url_for('add_forum') }}">
-                    <!-- 论坛ID -->
-                    <div class="mb-3">
-                        <label class="form-label">
-                            论坛 ID <span class="text-danger">*</span>
+                <form method="POST" action="{{ url_for('add_forum') }}" class="section-grid">
+                    <section>
+                        <h2 class="section-title">论坛身份</h2>
+                        <p class="section-subtitle">先定义唯一标识和显示名称，这两项会影响数据隔离和通知展示。</p>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="label-inline">
+                                    <i class="bi bi-hash"></i> 论坛 ID <span class="text-danger">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    name="forum_id"
+                                    placeholder="如: nodeseek, v2ex"
+                                    required
+                                    pattern="[a-z0-9\-]+"
+                                    title="只能包含小写字母、数字和连字符"
+                                >
+                                <div class="form-text">只允许小写字母、数字和连字符，用于配置与数据库隔离。</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="label-inline">
+                                    <i class="bi bi-chat-square-text"></i> 论坛名称 <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" class="form-control" name="name" placeholder="如: NodeSeek, V2EX" required>
+                                <div class="form-text">显示名称会直接出现在通知消息和工作台卡片里。</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h2 class="section-title">机器人接入</h2>
+                        <p class="section-subtitle">Bot Token 建议为每个论坛独立生成，便于权限和消息来源管理。</p>
+                        <label class="label-inline">
+                            <i class="bi bi-robot"></i> Bot Token <span class="text-danger">*</span>
                         </label>
-                        <input type="text" class="form-control" name="forum_id"
-                               placeholder="如: nodeseek, v2ex" required pattern="[a-z0-9\-]+"
-                               title="只能包含小写字母、数字和连字符">
-                        <div class="form-text">唯一标识符，用于数据隔离。只能包含小写字母、数字和连字符。</div>
+                        <input
+                            type="text"
+                            class="form-control"
+                            name="bot_token"
+                            placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+                            required
+                        >
+                        <div class="form-text">从 @BotFather 获取。独立 Bot 能让多论坛场景更清晰。</div>
+                    </section>
+
+                    <section>
+                        <h2 class="section-title">数据源</h2>
+                        <p class="section-subtitle">RSS 更轻量，Discourse 模式更灵活但需要额外 Cookie 配置。</p>
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label class="label-inline">
+                                    <i class="bi bi-rss"></i> 数据源类型
+                                </label>
+                                <select class="form-select" name="source_type" id="source_type" onchange="toggleSourceFields()">
+                                    <option value="rss" selected>RSS（公开内容，推荐）</option>
+                                    <option value="discourse">Discourse API（需要 Cookie）</option>
+                                </select>
+                            </div>
+                            <div class="col-md-7">
+                                <label class="label-inline">
+                                    <i class="bi bi-clock-history"></i> 拉取间隔（秒）
+                                </label>
+                                <input type="number" class="form-control" name="fetch_interval" value="60" min="10">
+                                <div class="form-text">建议从 60 秒起步，后续根据论坛活跃度再调整。</div>
+                            </div>
+                        </div>
+                        <div class="mt-3" id="rss_field">
+                            <label class="label-inline">
+                                <i class="bi bi-link-45deg"></i> RSS URL
+                            </label>
+                            <input type="text" class="form-control" name="rss_url" placeholder="https://www.nodeseek.com/rss.xml">
+                            <div class="form-text">留空时可按你的论坛规则再补默认格式。</div>
+                        </div>
+                        <div class="mt-3" id="discourse_field" style="display: none;">
+                            <label class="label-inline">
+                                <i class="bi bi-globe2"></i> Discourse URL
+                            </label>
+                            <input type="text" class="form-control" name="discourse_url" placeholder="https://www.nodeseek.com">
+                            <div class="form-text">填写论坛基础地址，Cookie 之后可在配置页继续补齐。</div>
+                        </div>
+                    </section>
+
+                    <div class="d-flex flex-wrap gap-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-circle"></i> 创建论坛
+                        </button>
+                        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> 返回工作台
+                        </a>
                     </div>
-
-                    <!-- 论坛名称 -->
-                    <div class="mb-3">
-                        <label class="form-label">
-                            论坛名称 <span class="text-danger">*</span>
-                        </label>
-                        <input type="text" class="form-control" name="name"
-                               placeholder="如: NodeSeek, V2EX" required>
-                        <div class="form-text">显示名称，用于通知消息。</div>
-                    </div>
-
-                    <!-- Bot Token -->
-                    <div class="mb-3">
-                        <label class="form-label">
-                            Bot Token <span class="text-danger">*</span>
-                        </label>
-                        <input type="text" class="form-control" name="bot_token"
-                               placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" required>
-                        <div class="form-text">从 @BotFather 获取的 Bot Token。<strong>每个论坛必须使用不同的 Bot！</strong></div>
-                    </div>
-
-                    <!-- 数据源类型 -->
-                    <div class="mb-3">
-                        <label class="form-label">数据源类型</label>
-                        <select class="form-select" name="source_type" id="source_type" onchange="toggleSourceFields()">
-                            <option value="rss" selected>RSS (公开内容，推荐)</option>
-                            <option value="discourse">Discourse API (需要Cookie)</option>
-                        </select>
-                    </div>
-
-                    <!-- RSS URL -->
-                    <div class="mb-3" id="rss_field">
-                        <label class="form-label">RSS URL</label>
-                        <input type="text" class="form-control" name="rss_url"
-                               placeholder="https://www.nodeseek.com/rss.xml">
-                        <div class="form-text">RSS 订阅地址。留空将使用默认格式。</div>
-                    </div>
-
-                    <!-- Discourse URL -->
-                    <div class="mb-3" id="discourse_field" style="display: none;">
-                        <label class="form-label">Discourse URL</label>
-                        <input type="text" class="form-control" name="discourse_url"
-                               placeholder="https://www.nodeseek.com">
-                        <div class="form-text">论坛基础 URL。</div>
-                    </div>
-
-                    <!-- 拉取间隔 -->
-                    <div class="mb-3">
-                        <label class="form-label">拉取间隔 (秒)</label>
-                        <input type="number" class="form-control" name="fetch_interval"
-                               value="60" min="10">
-                        <div class="form-text">数据拉取的时间间隔，建议 60 秒以上。</div>
-                    </div>
-
-                    <hr>
-
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-plus-circle"></i> 添加论坛
-                    </button>
-                    <a href="{{ url_for('index') }}" class="btn btn-secondary">
-                        取消
-                    </a>
                 </form>
             </div>
         </div>
     </div>
 
-    <div class="col-lg-4">
-        <div class="card">
+    <div class="col-xl-4">
+        <div class="surface-card">
             <div class="card-header">
-                <i class="bi bi-lightbulb"></i> 常见论坛 RSS
+                <span><i class="bi bi-check2-square"></i> 接入检查清单</span>
             </div>
             <div class="card-body">
-                <ul class="list-unstyled mb-0">
-                    <li class="mb-2">
-                        <strong>NodeSeek</strong><br>
-                        <code class="small">https://www.nodeseek.com/rss.xml</code>
-                    </li>
-                    <li class="mb-2">
-                        <strong>V2EX</strong><br>
-                        <code class="small">https://www.v2ex.com/index.xml</code>
-                    </li>
-                    <li class="mb-2">
-                        <strong>Hostloc</strong><br>
-                        <code class="small">https://hostloc.com/forum.php?mod=rss</code>
-                    </li>
-                    <li class="mb-2">
-                        <strong>1Point3Acres</strong><br>
-                        <code class="small">https://www.1point3acres.com/bbs/forum.php?mod=rss</code>
-                    </li>
+                <ul class="list-soft">
+                    <li>确认论坛已经有稳定可用的 RSS 地址，或者你能获取有效的 Discourse Cookie。</li>
+                    <li>在 @BotFather 中为这个论坛创建一个独立 Bot，并记录好 Token。</li>
+                    <li>首次接入后，建议先用较长的抓取间隔启动，确认稳定后再压缩。</li>
                 </ul>
             </div>
         </div>
+
+        <div class="surface-card">
+            <div class="card-header">
+                <span><i class="bi bi-lightbulb"></i> 常见论坛 RSS</span>
+            </div>
+            <div class="card-body helper-stack">
+                <div class="helper-item">
+                    <strong>NodeSeek</strong>
+                    <code>https://www.nodeseek.com/rss.xml</code>
+                </div>
+                <div class="helper-item">
+                    <strong>V2EX</strong>
+                    <code>https://www.v2ex.com/index.xml</code>
+                </div>
+                <div class="helper-item">
+                    <strong>Hostloc</strong>
+                    <code>https://hostloc.com/forum.php?mod=rss</code>
+                </div>
+                <div class="helper-item">
+                    <strong>1Point3Acres</strong>
+                    <code>https://www.1point3acres.com/bbs/forum.php?mod=rss</code>
+                </div>
+            </div>
+        </div>
     </div>
-</div>
+</section>
 {% endblock %}
 
 {% block extra_js %}

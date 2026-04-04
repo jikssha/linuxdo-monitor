@@ -1,164 +1,174 @@
 {% extends "base.html" %}
 {% set active_page = 'linuxdo' %}
-{% block title %}用户统计 - {{ forums[0].name if forums else 'Forum' }} - Forum Monitor{% endblock %}
+{% set ns = namespace(forum_name=(forums[0].name if forums else 'Forum')) %}
+{% for f in forums %}
+    {% if f.forum_id == forum_id %}
+        {% set ns.forum_name = f.name %}
+    {% endif %}
+{% endfor %}
+{% block title %}用户统计 - {{ ns.forum_name }} - Linux.do Monitor{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
-                <li class="breadcrumb-item"><a href="{{ url_for('linuxdo.config_page', forum_id=forum_id) }}">{{ forums[0].name if forums else 'Forum' }}</a></li>
-                <li class="breadcrumb-item active">用户统计</li>
-            </ol>
-        </nav>
-    </div>
-</div>
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">工作台</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('linuxdo.config_page', forum_id=forum_id) }}">{{ ns.forum_name }}</a></li>
+        <li class="breadcrumb-item active">用户统计</li>
+    </ol>
+</nav>
 
-<div class="row">
-    <div class="col-12">
-        <h2><i class="bi bi-bar-chart"></i> 用户统计</h2>
+<section class="page-hero">
+    <div>
+        <div class="eyebrow">
+            <i class="bi bi-bar-chart-line-fill"></i> Metrics & Audience
+        </div>
+        <h1 class="hero-title">{{ ns.forum_name }} 用户统计</h1>
+        <p class="hero-subtitle">
+            这里集中展示当前论坛的用户规模、关键词密度、通知量和分页明细，方便快速判断活跃度与订阅结构。
+        </p>
     </div>
-</div>
+    <div class="hero-actions">
+        <span class="status-pill primary"><i class="bi bi-people-fill"></i> {{ stats.user_count }} 位用户</span>
+        <a href="{{ url_for('linuxdo.config_page', forum_id=forum_id) }}" class="status-pill">
+            <i class="bi bi-sliders2"></i> 返回配置
+        </a>
+    </div>
+</section>
 
 {% if forums|length > 1 %}
-<div class="row mt-3">
-    <div class="col-12">
-        <div class="btn-group" role="group">
+<section class="surface-card">
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2">
             {% for f in forums %}
-            <a href="{{ url_for('linuxdo.users_page', forum_id=f.forum_id) }}"
-               class="btn btn-{{ 'primary' if f.forum_id == forum_id else 'outline-primary' }}">
-                {{ f.name }}
+            <a
+                href="{{ url_for('linuxdo.users_page', forum_id=f.forum_id) }}"
+                class="switch-chip {% if f.forum_id == forum_id %}active{% endif %}"
+            >
+                <i class="bi bi-chat-left-dots"></i> {{ f.name }}
             </a>
             {% endfor %}
         </div>
     </div>
-</div>
+</section>
 {% endif %}
 
-<!-- 统计卡片 -->
-<div class="row mt-4">
-    <div class="col-md-2 col-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="display-4">{{ stats.user_count }}</div>
-                <div class="text-muted">总用户数</div>
-            </div>
+<section class="row g-4 mb-2">
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="metric-card">
+            <div class="metric-icon"><i class="bi bi-people"></i></div>
+            <span class="metric-label">总用户数</span>
+            <div class="metric-value">{{ stats.user_count }}</div>
+            <div class="metric-note">已登记 Bot 用户</div>
         </div>
     </div>
-    <div class="col-md-2 col-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="display-4">{{ stats.subscribe_all_count }}</div>
-                <div class="text-muted">订阅全部</div>
-            </div>
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="metric-card">
+            <div class="metric-icon"><i class="bi bi-stars"></i></div>
+            <span class="metric-label">订阅全部</span>
+            <div class="metric-value">{{ stats.subscribe_all_count }}</div>
+            <div class="metric-note">全站新帖订阅</div>
         </div>
     </div>
-    <div class="col-md-2 col-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="display-4">{{ stats.keyword_count }}</div>
-                <div class="text-muted">关键词数</div>
-            </div>
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="metric-card">
+            <div class="metric-icon"><i class="bi bi-search"></i></div>
+            <span class="metric-label">关键词数</span>
+            <div class="metric-value">{{ stats.keyword_count }}</div>
+            <div class="metric-note">去重后的关键词</div>
         </div>
     </div>
-    <div class="col-md-2 col-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="display-4">{{ stats.subscription_count }}</div>
-                <div class="text-muted">总订阅数</div>
-            </div>
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="metric-card">
+            <div class="metric-icon"><i class="bi bi-tags"></i></div>
+            <span class="metric-label">总订阅数</span>
+            <div class="metric-value">{{ stats.subscription_count }}</div>
+            <div class="metric-note">所有关键词订阅</div>
         </div>
     </div>
-    <div class="col-md-2 col-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="display-4">{{ stats.post_count }}</div>
-                <div class="text-muted">已处理帖子</div>
-            </div>
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="metric-card">
+            <div class="metric-icon"><i class="bi bi-chat-text"></i></div>
+            <span class="metric-label">已处理帖子</span>
+            <div class="metric-value">{{ stats.post_count }}</div>
+            <div class="metric-note">累计入库帖子</div>
         </div>
     </div>
-    <div class="col-md-2 col-6">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="display-4">{{ stats.notification_count }}</div>
-                <div class="text-muted">已发送通知</div>
-            </div>
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="metric-card">
+            <div class="metric-icon"><i class="bi bi-send-check"></i></div>
+            <span class="metric-label">已发送通知</span>
+            <div class="metric-value">{{ stats.notification_count }}</div>
+            <div class="metric-note">累计发送记录</div>
         </div>
     </div>
-</div>
+</section>
 
-<!-- 用户列表 -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-people"></i> 用户列表
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Chat ID</th>
-                                <th>注册时间</th>
-                                <th>订阅数</th>
-                                <th>关键词</th>
-                                <th>收到通知</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% if users %}
-                                {% for user in users %}
-                                <tr>
-                                    <td><code>{{ user.chat_id }}</code></td>
-                                    <td>{{ user.created_at[:10] }}</td>
-                                    <td>
-                                        {{ user.keyword_count }}
-                                        {% if user.is_subscribe_all %}
-                                            <span class="badge bg-success">全部</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span title="{{ user.keywords }}">
-                                            {{ user.keywords[:50] }}{% if user.keywords|length > 50 %}...{% endif %}
-                                        </span>
-                                        {% if not user.keywords %}-{% endif %}
-                                    </td>
-                                    <td>{{ user.notification_count }}</td>
-                                </tr>
-                                {% endfor %}
-                            {% else %}
-                                <tr>
-                                    <td colspan="5" class="text-center text-muted">暂无用户</td>
-                                </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- 分页 -->
-                {% if total_pages > 1 %}
-                <nav aria-label="Page navigation">
-                    <ul class="pagination justify-content-center">
-                        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                            <a class="page-link" href="{{ url_for('linuxdo.users_page', forum_id=forum_id, page=page-1) }}">
-                                上一页
-                            </a>
-                        </li>
-                        <li class="page-item disabled">
-                            <span class="page-link">第 {{ page }} / {{ total_pages }} 页 (共 {{ total }} 条)</span>
-                        </li>
-                        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-                            <a class="page-link" href="{{ url_for('linuxdo.users_page', forum_id=forum_id, page=page+1) }}">
-                                下一页
-                            </a>
-                        </li>
-                    </ul>
-                </nav>
-                {% endif %}
-            </div>
-        </div>
+<section class="surface-card">
+    <div class="card-header">
+        <span><i class="bi bi-table"></i> 用户明细</span>
+        <span class="badge bg-light text-dark">Page {{ page }}/{{ total_pages if total_pages else 1 }}</span>
     </div>
-</div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Chat ID</th>
+                        <th>注册时间</th>
+                        <th>订阅数</th>
+                        <th>关键词</th>
+                        <th>收到通知</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if users %}
+                        {% for user in users %}
+                        <tr>
+                            <td><code>{{ user.chat_id }}</code></td>
+                            <td>{{ user.created_at[:10] }}</td>
+                            <td>
+                                <strong>{{ user.keyword_count }}</strong>
+                                {% if user.is_subscribe_all %}
+                                    <span class="badge bg-success">全部</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span title="{{ user.keywords }}">
+                                    {{ user.keywords[:50] }}{% if user.keywords|length > 50 %}...{% endif %}
+                                </span>
+                                {% if not user.keywords %}<span class="text-muted">-</span>{% endif %}
+                            </td>
+                            <td>{{ user.notification_count }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-4">暂无用户数据</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if total_pages > 1 %}
+        <div class="d-flex flex-wrap justify-content-center gap-3 mt-4">
+            <a
+                class="btn btn-outline-secondary {% if page <= 1 %}disabled{% endif %}"
+                href="{{ url_for('linuxdo.users_page', forum_id=forum_id, page=page-1) }}"
+            >
+                <i class="bi bi-arrow-left"></i> 上一页
+            </a>
+            <span class="status-pill">
+                <i class="bi bi-files"></i> 第 {{ page }} / {{ total_pages }} 页 · 共 {{ total }} 条
+            </span>
+            <a
+                class="btn btn-outline-secondary {% if page >= total_pages %}disabled{% endif %}"
+                href="{{ url_for('linuxdo.users_page', forum_id=forum_id, page=page+1) }}"
+            >
+                下一页 <i class="bi bi-arrow-right"></i>
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</section>
 {% endblock %}

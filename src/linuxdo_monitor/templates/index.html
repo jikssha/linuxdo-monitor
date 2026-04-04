@@ -1,59 +1,149 @@
 {% extends "base.html" %}
-{% block title %}首页 - Forum Monitor{% endblock %}
+{% set active_page = 'dashboard' %}
+{% block title %}工作台 - Linux.do Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .forum-card {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        height: 100%;
+    }
+
+    .forum-topline {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .forum-mark {
+        display: inline-grid;
+        place-items: center;
+        width: 3rem;
+        height: 3rem;
+        border-radius: 1rem;
+        background: var(--accent-soft);
+        color: var(--primary-strong);
+        font-size: 1.1rem;
+    }
+
+    .forum-id {
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .forum-name {
+        margin: 0.45rem 0 0;
+        font-family: "Space Grotesk", "Manrope", sans-serif;
+        font-size: 1.3rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+    }
+
+    .forum-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.7rem;
+        margin-top: auto;
+    }
+
+    .forum-empty {
+        display: grid;
+        place-items: center;
+        min-height: 100%;
+        text-align: center;
+        border-style: dashed;
+        background: linear-gradient(155deg, rgba(255, 255, 255, 0.76), rgba(223, 237, 241, 0.4));
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h2><i class="bi bi-house"></i> 控制面板</h2>
-        <p class="text-muted">选择要管理的论坛</p>
-    </div>
-</div>
-
-<div class="row mt-4">
-    {% for forum in forums %}
-    <div class="col-md-4 mb-3">
-        <div class="card {% if not forum.enabled %}border-secondary{% endif %}">
-            <div class="card-body">
-                <h5 class="card-title">
-                    <i class="bi bi-chat-dots"></i> {{ forum.name }}
-                    {% if not forum.enabled %}
-                    <span class="badge bg-secondary">已禁用</span>
-                    {% endif %}
-                </h5>
-                <p class="card-text text-muted">
-                    <small>ID: {{ forum.forum_id }}</small>
-                </p>
-                <a href="{{ url_for('linuxdo.config_page', forum_id=forum.forum_id) }}" class="btn btn-primary btn-sm">
-                    <i class="bi bi-gear"></i> 管理配置
-                </a>
-                <a href="{{ url_for('linuxdo.users_page', forum_id=forum.forum_id) }}" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-people"></i> 用户统计
-                </a>
-                {% if forums|length > 1 %}
-                <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteModal{{ loop.index }}">
-                    <i class="bi bi-trash"></i>
-                </button>
-                {% endif %}
-            </div>
+<section class="page-hero">
+    <div>
+        <div class="eyebrow">
+            <i class="bi bi-grid-1x2-fill"></i> Console Overview
         </div>
+        <h1 class="hero-title">论坛监控工作台</h1>
+        <p class="hero-subtitle">
+            在一个统一界面里切换论坛、查看运行状态、进入配置和用户统计。当前设计专门针对运维控制流做了收敛，让高频动作更容易被一眼找到。
+        </p>
+    </div>
+    <div class="hero-actions">
+        <span class="status-pill primary">
+            <i class="bi bi-hdd-stack"></i> {{ forums|length }} 个论坛
+        </span>
+        <a href="{{ url_for('add_forum') }}" class="status-pill">
+            <i class="bi bi-plus-circle"></i> 添加论坛
+        </a>
+    </div>
+</section>
+
+<section class="row g-4">
+    {% for forum in forums %}
+    <div class="col-xl-4 col-md-6">
+        <article class="surface-card h-100">
+            <div class="card-body forum-card">
+                <div class="forum-topline">
+                    <div>
+                        <div class="forum-mark">
+                            <i class="bi bi-chat-left-dots"></i>
+                        </div>
+                        <div class="forum-id">ID · {{ forum.forum_id }}</div>
+                        <h2 class="forum-name">{{ forum.name }}</h2>
+                    </div>
+                    {% if forum.enabled %}
+                    <span class="status-pill primary"><i class="bi bi-check2-circle"></i> 已启用</span>
+                    {% else %}
+                    <span class="status-pill"><i class="bi bi-pause-circle"></i> 已禁用</span>
+                    {% endif %}
+                </div>
+                <p class="metric-note mb-0">
+                    从这里进入该论坛的配置、Cookie 检测、抓取节奏和用户统计。删除操作仍然保留确认弹窗，避免误删配置。
+                </p>
+                <div class="forum-actions">
+                    <a href="{{ url_for('linuxdo.config_page', forum_id=forum.forum_id) }}" class="btn btn-primary">
+                        <i class="bi bi-sliders2"></i> 打开配置
+                    </a>
+                    <a href="{{ url_for('linuxdo.users_page', forum_id=forum.forum_id) }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-people"></i> 用户统计
+                    </a>
+                    {% if forums|length > 1 %}
+                    <button
+                        type="button"
+                        class="btn btn-outline-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#deleteModal{{ loop.index }}"
+                        aria-label="删除 {{ forum.name }}"
+                    >
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </article>
     </div>
 
-    <!-- Delete Modal -->
-    <div class="modal fade" id="deleteModal{{ loop.index }}" tabindex="-1">
-        <div class="modal-dialog">
+    <div class="modal fade" id="deleteModal{{ loop.index }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">确认删除</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title">确认删除论坛</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
                 </div>
                 <div class="modal-body">
-                    确定要删除论坛 <strong>{{ forum.name }}</strong> 吗？
-                    <p class="text-danger mt-2"><small>此操作不会删除数据库中的用户数据，但配置将被移除。</small></p>
+                    <p class="mb-2">确定要删除 <strong>{{ forum.name }}</strong> 吗？</p>
+                    <p class="text-muted mb-0">此操作会移除论坛配置，但不会清空数据库中的历史用户数据。</p>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <form action="{{ url_for('delete_forum', forum_id=forum.forum_id) }}" method="POST" style="display: inline;">
-                        <button type="submit" class="btn btn-danger">删除</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <form action="{{ url_for('delete_forum', forum_id=forum.forum_id) }}" method="POST">
+                        <button type="submit" class="btn btn-outline-danger">确认删除</button>
                     </form>
                 </div>
             </div>
@@ -61,16 +151,23 @@
     </div>
     {% endfor %}
 
-    <!-- Add Forum Card -->
-    <div class="col-md-4 mb-3">
-        <div class="card bg-light h-100">
-            <div class="card-body d-flex flex-column justify-content-center align-items-center">
-                <a href="{{ url_for('add_forum') }}" class="text-decoration-none text-muted">
-                    <h5 class="card-title"><i class="bi bi-plus-circle" style="font-size: 2rem;"></i></h5>
-                    <p class="card-text">添加新论坛</p>
+    <div class="col-xl-4 col-md-6">
+        <article class="surface-card h-100 forum-empty">
+            <div class="card-body d-grid gap-3 justify-items-center">
+                <div class="forum-mark">
+                    <i class="bi bi-plus-lg"></i>
+                </div>
+                <div>
+                    <h2 class="forum-name mb-2">扩展新的论坛节点</h2>
+                    <p class="metric-note mb-0">
+                        为新的论坛创建独立机器人和抓取配置，继续复用同一套控制台。
+                    </p>
+                </div>
+                <a href="{{ url_for('add_forum') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> 添加论坛
                 </a>
             </div>
-        </div>
+        </article>
     </div>
-</div>
+</section>
 {% endblock %}

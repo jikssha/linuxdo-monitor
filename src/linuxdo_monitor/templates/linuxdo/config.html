@@ -1,255 +1,358 @@
 {% extends "base.html" %}
 {% set active_page = 'linuxdo' %}
-{% block title %}{{ forum_config.name if forum_config else 'Forum' }} 配置 - Forum Monitor{% endblock %}
+{% block title %}{{ forum_config.name if forum_config else 'Forum' }} 配置 - Linux.do Monitor{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
-                <li class="breadcrumb-item active">{{ forum_config.name if forum_config else 'Forum' }} 配置</li>
-            </ol>
-        </nav>
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">工作台</a></li>
+        <li class="breadcrumb-item active">{{ forum_config.name if forum_config else 'Forum' }} 配置</li>
+    </ol>
+</nav>
+
+<section class="page-hero">
+    <div>
+        <div class="eyebrow">
+            <i class="bi bi-sliders2-vertical"></i> Forum Control
+        </div>
+        <h1 class="hero-title">{{ forum_config.name if forum_config else 'Forum' }} 配置中心</h1>
+        <p class="hero-subtitle">
+            统一管理论坛身份、抓取方式、Cookie、Cloudflare 绕过策略和告警路径。页面结构已经按运维频率重新分区，减少在长表单里来回扫描的负担。
+        </p>
     </div>
-</div>
+    <div class="hero-actions">
+        <span class="status-pill primary">
+            <i class="bi bi-check2-circle"></i>
+            {{ '已启用' if forum_config.enabled is not defined or forum_config.enabled else '已禁用' }}
+        </span>
+        <span class="status-pill">
+            <i class="bi bi-clock-history"></i> {{ forum_config.fetch_interval or 30 }} 秒轮询
+        </span>
+    </div>
+</section>
 
 {% if forums|length > 1 %}
-<div class="row mb-3">
-    <div class="col-12">
-        <div class="btn-group" role="group">
+<section class="surface-card">
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2">
             {% for f in forums %}
-            <a href="{{ url_for('linuxdo.config_page', forum_id=f.forum_id) }}"
-               class="btn btn-{{ 'primary' if f.forum_id == forum_id else 'outline-primary' }}">
-                {{ f.name }}
+            <a
+                href="{{ url_for('linuxdo.config_page', forum_id=f.forum_id) }}"
+                class="switch-chip {% if f.forum_id == forum_id %}active{% endif %}"
+            >
+                <i class="bi bi-chat-left-dots"></i> {{ f.name }}
             </a>
             {% endfor %}
         </div>
     </div>
-</div>
+</section>
 {% endif %}
 
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card">
+<section class="row g-4">
+    <div class="col-xl-8">
+        <div class="surface-card">
             <div class="card-header">
-                <i class="bi bi-gear"></i> {{ forum_config.name if forum_config else 'Forum' }} 配置管理
+                <span><i class="bi bi-gear-wide-connected"></i> 配置项</span>
+                <span class="badge bg-light text-dark">Live Update</span>
             </div>
             <div class="card-body">
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i>
-                    <strong>热更新说明:</strong> 大部分配置保存后立即生效，无需重启服务。
-                    标有 <span class="badge bg-danger badge-restart">需重启</span> 的配置修改后需要重启服务。
+                    <strong>热更新说明：</strong> 大部分配置保存后立即生效。带有
+                    <span class="badge badge-restart">需重启</span>
+                    标记的配置建议保存后重启服务。
                 </div>
 
-                <form method="POST" action="{{ url_for('linuxdo.save_config', forum_id=forum_id) }}">
+                <form method="POST" action="{{ url_for('linuxdo.save_config', forum_id=forum_id) }}" class="section-grid">
                     <input type="hidden" name="forum_id" value="{{ forum_id }}">
 
-                    <!-- 论坛名称 -->
-                    <div class="mb-3">
-                        <label class="form-label">
-                            论坛名称
-                            <span class="badge bg-danger badge-restart">需重启</span>
-                        </label>
-                        <input type="text" class="form-control" name="name"
-                               value="{{ forum_config.name or '' }}" placeholder="如: Linux.do">
-                        <div class="form-text">论坛的显示名称，用于通知消息</div>
-                    </div>
-
-                    <!-- 启用状态 -->
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" name="enabled" id="enabled"
-                                   {% if forum_config.enabled is not defined or forum_config.enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="enabled">
-                                启用此论坛
-                                <span class="badge bg-danger badge-restart">需重启</span>
-                            </label>
+                    <section>
+                        <h2 class="section-title">论坛身份</h2>
+                        <p class="section-subtitle">这些配置决定论坛在控制台和通知里的身份，也是多论坛隔离的基础信息。</p>
+                        <div class="row g-3">
+                            <div class="col-md-7">
+                                <label class="label-inline">
+                                    <i class="bi bi-chat-square-text"></i> 论坛名称
+                                    <span class="badge badge-restart">需重启</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    name="name"
+                                    value="{{ forum_config.name or '' }}"
+                                    placeholder="如: Linux.do"
+                                >
+                                <div class="form-text">显示名称会进入通知消息、工作台和统计页标题。</div>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="label-inline">
+                                    <i class="bi bi-toggle-on"></i> 启用状态
+                                    <span class="badge badge-restart">需重启</span>
+                                </label>
+                                <div class="surface-card mb-0">
+                                    <div class="card-body py-3">
+                                        <div class="form-check form-switch mb-0">
+                                            <input
+                                                class="form-check-input"
+                                                type="checkbox"
+                                                name="enabled"
+                                                id="enabled"
+                                                {% if forum_config.enabled is not defined or forum_config.enabled %}checked{% endif %}
+                                            >
+                                            <label class="form-check-label" for="enabled">
+                                                启用此论坛
+                                            </label>
+                                        </div>
+                                        <div class="form-text">禁用后该论坛不会参与启动和轮询。</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-text">禁用后此论坛将不会启动</div>
-                    </div>
+                    </section>
 
-                    <!-- Bot Token -->
-                    <div class="mb-3">
-                        <label class="form-label">
-                            Bot Token
-                            <span class="badge bg-danger badge-restart">需重启</span>
+                    <section>
+                        <h2 class="section-title">机器人与抓取节奏</h2>
+                        <p class="section-subtitle">这是日常最常改动的区域，决定消息发送身份和轮询压力。</p>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="label-inline">
+                                    <i class="bi bi-robot"></i> Bot Token
+                                    <span class="badge badge-restart">需重启</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    name="bot_token"
+                                    value="{{ forum_config.bot_token or '' }}"
+                                    placeholder="Telegram Bot Token"
+                                >
+                                <div class="form-text">从 @BotFather 获取。多论坛场景建议每个论坛使用不同 Bot。</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="label-inline">
+                                    <i class="bi bi-hourglass-split"></i> 拉取间隔（秒）
+                                </label>
+                                <input type="number" class="form-control" name="fetch_interval" value="{{ forum_config.fetch_interval or 30 }}" min="10">
+                                <div class="form-text">数据拉取间隔。活跃论坛建议先保守，再逐步压缩。</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="label-inline">
+                                    <i class="bi bi-shield-check"></i> Cookie 检测间隔（秒）
+                                </label>
+                                <input
+                                    type="number"
+                                    class="form-control"
+                                    name="cookie_check_interval"
+                                    value="{{ forum_config.cookie_check_interval if forum_config.cookie_check_interval is not none else 300 }}"
+                                    min="0"
+                                >
+                                <div class="form-text">0 表示禁用。用于独立探测 Cookie 状态。</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h2 class="section-title">数据源</h2>
+                        <p class="section-subtitle">选择论坛内容的获取方式。RSS 更轻量，Discourse 模式更灵活。</p>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="label-inline">
+                                    <i class="bi bi-rss"></i> 数据源类型
+                                </label>
+                                <select class="form-select" name="source_type">
+                                    <option value="rss" {% if forum_config.source_type == 'rss' %}selected{% endif %}>RSS（公开内容）</option>
+                                    <option value="discourse" {% if forum_config.source_type == 'discourse' %}selected{% endif %}>Discourse API（需 Cookie）</option>
+                                </select>
+                            </div>
+                            <div class="col-md-8">
+                                <label class="label-inline">
+                                    <i class="bi bi-link-45deg"></i> RSS URL
+                                    <span class="badge badge-restart">需重启</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    name="rss_url"
+                                    value="{{ forum_config.rss_url or 'https://linux.do/latest.rss' }}"
+                                    placeholder="https://linux.do/latest.rss"
+                                >
+                                <div class="form-text">RSS 数据源地址，可作为默认抓取源或 Discourse 失败时的兜底路径。</div>
+                            </div>
+                            <div class="col-12">
+                                <label class="label-inline">
+                                    <i class="bi bi-globe2"></i> Discourse URL
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    name="discourse_url"
+                                    value="{{ forum_config.discourse_url or 'https://linux.do' }}"
+                                    placeholder="https://linux.do"
+                                >
+                                <div class="form-text">论坛基础地址，用于 Cookie 检测、分类同步和 API 抓取。</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h2 class="section-title">Cookie 与 Cloudflare 绕过</h2>
+                        <p class="section-subtitle">这里集中处理登录态、CF 代理和浏览器绕过策略，便于排查抓取异常。</p>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="label-inline">
+                                    <i class="bi bi-cookie"></i> Discourse Cookie
+                                </label>
+                                <textarea
+                                    class="form-control"
+                                    name="discourse_cookie"
+                                    rows="4"
+                                    id="cookie-input"
+                                    placeholder="粘贴完整 Cookie，系统会提取关键字段..."
+                                >{{ forum_config.discourse_cookie or '' }}</textarea>
+                                <div class="form-text">
+                                    直接粘贴浏览器完整 Cookie 即可，系统会自动提取 <code>_t</code> 与 <code>_forum_session</code>。
+                                </div>
+                                <button type="button" class="btn btn-primary mt-3" onclick="testCookie()">
+                                    <i class="bi bi-check-circle"></i> 测试 Cookie 有效性
+                                </button>
+                                <div id="test-result" class="mt-3" style="display: none;"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="label-inline">
+                                    <i class="bi bi-cloud-haze2"></i> CF 绕过模式
+                                </label>
+                                <select class="form-select" name="cf_bypass_mode">
+                                    <option value="flaresolverr_rss" {% if (forum_config.cf_bypass_mode or 'flaresolverr_rss') == 'flaresolverr_rss' %}selected{% endif %}>
+                                        FlareSolverr → RSS 兜底
+                                    </option>
+                                    <option value="drissionpage" {% if forum_config.cf_bypass_mode == 'drissionpage' %}selected{% endif %}>
+                                        DrissionPage + JSON/requests
+                                    </option>
+                                </select>
+                                <div class="form-text">DrissionPage 需要本机浏览器环境；失败时会自动回退 RSS。</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="label-inline">
+                                    <i class="bi bi-box-arrow-up-right"></i> FlareSolverr URL
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    name="flaresolverr_url"
+                                    value="{{ forum_config.flaresolverr_url or '' }}"
+                                    placeholder="http://localhost:8191"
+                                >
+                                <div class="form-text">可选，用于绕过 Cloudflare。适合容器部署或远端代理场景。</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="label-inline">
+                                    <i class="bi bi-laptop"></i> DrissionPage 无头模式
+                                </label>
+                                <select class="form-select" name="drissionpage_headless">
+                                    <option value="true" {% if forum_config.drissionpage_headless is not defined or forum_config.drissionpage_headless %}selected{% endif %}>开启（推荐）</option>
+                                    <option value="false" {% if forum_config.drissionpage_headless is defined and not forum_config.drissionpage_headless %}selected{% endif %}>关闭</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="label-inline">
+                                    <i class="bi bi-display"></i> 使用 Xvfb
+                                </label>
+                                <select class="form-select" name="drissionpage_use_xvfb">
+                                    <option value="true" {% if forum_config.drissionpage_use_xvfb is not defined or forum_config.drissionpage_use_xvfb %}selected{% endif %}>是（服务器推荐）</option>
+                                    <option value="false" {% if forum_config.drissionpage_use_xvfb is defined and not forum_config.drissionpage_use_xvfb %}selected{% endif %}>否</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="label-inline">
+                                    <i class="bi bi-folder2-open"></i> Profile 目录
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    name="drissionpage_user_data_dir"
+                                    value="{{ forum_config.drissionpage_user_data_dir or '' }}"
+                                    placeholder="/path/to/profile"
+                                >
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h2 class="section-title">全局告警</h2>
+                        <p class="section-subtitle">当抓取失败、Cookie 异常或系统需要运维介入时，用这个 Chat ID 接收告警。</p>
+                        <label class="label-inline">
+                            <i class="bi bi-bell"></i> 管理员 Chat ID
                         </label>
-                        <input type="text" class="form-control" name="bot_token"
-                               value="{{ forum_config.bot_token or '' }}" placeholder="Telegram Bot Token">
-                        <div class="form-text">从 @BotFather 获取的 Bot Token</div>
-                    </div>
-
-                    <!-- 数据源类型 -->
-                    <div class="mb-3">
-                        <label class="form-label">数据源类型</label>
-                        <select class="form-select" name="source_type">
-                            <option value="rss" {% if forum_config.source_type == 'rss' %}selected{% endif %}>
-                                RSS (公开内容)
-                            </option>
-                            <option value="discourse" {% if forum_config.source_type == 'discourse' %}selected{% endif %}>
-                                Discourse API (需要Cookie)
-                            </option>
-                        </select>
-                    </div>
-
-                    <!-- RSS URL -->
-                    <div class="mb-3">
-                        <label class="form-label">
-                            RSS URL
-                            <span class="badge bg-danger badge-restart">需重启</span>
-                        </label>
-                        <input type="text" class="form-control" name="rss_url"
-                               value="{{ forum_config.rss_url or 'https://linux.do/latest.rss' }}"
-                               placeholder="https://linux.do/latest.rss">
-                        <div class="form-text">RSS 数据源的 URL</div>
-                    </div>
-
-                    <!-- Discourse URL -->
-                    <div class="mb-3">
-                        <label class="form-label">Discourse URL</label>
-                        <input type="text" class="form-control" name="discourse_url"
-                               value="{{ forum_config.discourse_url or 'https://linux.do' }}"
-                               placeholder="https://linux.do">
-                        <div class="form-text">Discourse 论坛的基础 URL</div>
-                    </div>
-
-                    <!-- Discourse Cookie -->
-                    <div class="mb-3">
-                        <label class="form-label">Discourse Cookie</label>
-                        <textarea class="form-control" name="discourse_cookie" rows="4"
-                                  id="cookie-input" placeholder="粘贴完整的 Cookie 值...">{{ forum_config.discourse_cookie or '' }}</textarea>
+                        <input
+                            type="number"
+                            class="form-control"
+                            name="admin_chat_id"
+                            value="{{ config.admin_chat_id or '' }}"
+                            placeholder="可选，用于接收系统告警"
+                        >
                         <div class="form-text">
-                            直接粘贴浏览器完整 Cookie（支持换行格式），系统会自动提取 _t 和 _forum_session 字段
+                            可以通过 @userinfobot 获取你的 Chat ID，用于接收 Cookie 失效或拉取失败告警。
                         </div>
-                        <button type="button" class="btn btn-success btn-sm mt-2" onclick="testCookie()">
-                            <i class="bi bi-check-circle"></i> 测试 Cookie 有效性
+                    </section>
+
+                    <div class="d-flex flex-wrap gap-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> 保存并应用
                         </button>
-                        <div id="test-result" class="mt-2" style="display: none;"></div>
+                        <a href="{{ url_for('linuxdo.users_page', forum_id=forum_id) }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-people"></i> 查看用户统计
+                        </a>
                     </div>
-
-                    <!-- CF 绕过模式 -->
-                    <div class="mb-3">
-                        <label class="form-label">CF 绕过模式</label>
-                        <select class="form-select" name="cf_bypass_mode">
-                            <option value="flaresolverr_rss" {% if (forum_config.cf_bypass_mode or 'flaresolverr_rss') == 'flaresolverr_rss' %}selected{% endif %}>
-                                FlareSolverr → RSS 兜底
-                            </option>
-                            <option value="drissionpage" {% if forum_config.cf_bypass_mode == 'drissionpage' %}selected{% endif %}>
-                                DrissionPage + JSON/requests
-                            </option>
-                        </select>
-                        <div class="form-text">DrissionPage 需要单独安装；失败时会自动回退 RSS</div>
-                    </div>
-
-                    <!-- DrissionPage 配置 -->
-                    <div class="mb-3">
-                        <label class="form-label">DrissionPage 无头模式</label>
-                        <select class="form-select" name="drissionpage_headless">
-                            <option value="true" {% if forum_config.drissionpage_headless is not defined or forum_config.drissionpage_headless %}selected{% endif %}>
-                                开启（推荐）
-                            </option>
-                            <option value="false" {% if forum_config.drissionpage_headless is defined and not forum_config.drissionpage_headless %}selected{% endif %}>
-                                关闭（更拟人，需桌面环境）
-                            </option>
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">DrissionPage 使用 Xvfb</label>
-                        <select class="form-select" name="drissionpage_use_xvfb">
-                            <option value="true" {% if forum_config.drissionpage_use_xvfb is not defined or forum_config.drissionpage_use_xvfb %}selected{% endif %}>
-                                是（服务器推荐）
-                            </option>
-                            <option value="false" {% if forum_config.drissionpage_use_xvfb is defined and not forum_config.drissionpage_use_xvfb %}selected{% endif %}>
-                                否（有真实 DISPLAY）
-                            </option>
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">DrissionPage Profile 目录（可选）</label>
-                        <input type="text" class="form-control" name="drissionpage_user_data_dir"
-                               value="{{ forum_config.drissionpage_user_data_dir or '' }}"
-                               placeholder="/path/to/profile">
-                        <div class="form-text">用于复用浏览器配置和缓存，不填则使用临时配置</div>
-                    </div>
-
-                    <!-- 拉取间隔 -->
-                    <div class="mb-3">
-                        <label class="form-label">拉取间隔 (秒)</label>
-                        <input type="number" class="form-control" name="fetch_interval"
-                               value="{{ forum_config.fetch_interval or 30 }}" min="10">
-                        <div class="form-text">数据拉取的时间间隔</div>
-                    </div>
-
-                    <!-- FlareSolverr URL -->
-                    <div class="mb-3">
-                        <label class="form-label">FlareSolverr URL</label>
-                        <input type="text" class="form-control" name="flaresolverr_url"
-                               value="{{ forum_config.flaresolverr_url or '' }}"
-                               placeholder="http://localhost:8191">
-                        <div class="form-text">
-                            可选，用于绕过 Cloudflare。
-                            启动命令: <code>docker run -d -p 127.0.0.1:8191:8191 ghcr.io/flaresolverr/flaresolverr</code>
-                        </div>
-                    </div>
-
-                    <!-- Cookie 检测间隔 -->
-                    <div class="mb-3">
-                        <label class="form-label">Cookie 检测间隔 (秒)</label>
-                        <input type="number" class="form-control" name="cookie_check_interval"
-                               value="{{ forum_config.cookie_check_interval if forum_config.cookie_check_interval is not none else 300 }}" min="0">
-                        <div class="form-text">独立检测 Cookie 有效性的间隔，0 表示禁用</div>
-                    </div>
-
-                    <hr>
-                    <h6>全局配置</h6>
-
-                    <!-- 管理员 Chat ID -->
-                    <div class="mb-3">
-                        <label class="form-label">管理员 Chat ID</label>
-                        <input type="number" class="form-control" name="admin_chat_id"
-                               value="{{ config.admin_chat_id or '' }}"
-                               placeholder="可选，用于接收系统告警">
-                        <div class="form-text">
-                            Cookie 失效或拉取失败时会发送告警到此 ID。可通过 @userinfobot 获取你的 Chat ID
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-save"></i> 保存并应用
-                    </button>
                 </form>
             </div>
         </div>
     </div>
 
-    <div class="col-lg-4">
-        <!-- 当前状态卡片 -->
-        <div class="card">
+    <div class="col-xl-4">
+        <div class="surface-card">
             <div class="card-header">
-                <i class="bi bi-info-circle"></i> 当前状态
+                <span><i class="bi bi-activity"></i> 当前状态</span>
+            </div>
+            <div class="card-body section-grid">
+                <div class="metric-card">
+                    <span class="metric-label">Forum</span>
+                    <div class="metric-value" style="font-size: 1.9rem;">{{ forum_config.name if forum_config else 'N/A' }}</div>
+                    <div class="metric-note">论坛 ID：<code>{{ forum_id }}</code></div>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-label">Source</span>
+                    <div class="metric-value" style="font-size: 1.85rem;">{{ forum_config.source_type or 'rss' }}</div>
+                    <div class="metric-note">
+                        Cookie：
+                        {% if forum_config.discourse_cookie %}
+                            <span class="text-success">已配置</span>
+                        {% else %}
+                            <span class="text-muted">未配置</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-label">Polling</span>
+                    <div class="metric-value">{{ forum_config.fetch_interval or 30 }}</div>
+                    <div class="metric-note">单位：秒</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="surface-card">
+            <div class="card-header">
+                <span><i class="bi bi-journal-check"></i> 调整建议</span>
             </div>
             <div class="card-body">
-                <p><strong>论坛:</strong> {{ forum_config.name if forum_config else 'N/A' }}</p>
-                <p><strong>数据源:</strong> {{ forum_config.source_type or 'rss' }}</p>
-                <p><strong>Cookie:</strong>
-                    {% if forum_config.discourse_cookie %}
-                        <span class="text-success"><i class="bi bi-check-circle"></i> 已配置</span>
-                    {% else %}
-                        <span class="text-muted"><i class="bi bi-x-circle"></i> 未配置</span>
-                    {% endif %}
-                </p>
-                <p><strong>拉取间隔:</strong> {{ forum_config.fetch_interval or 30 }} 秒</p>
-                <hr>
-                <a href="{{ url_for('linuxdo.users_page', forum_id=forum_id) }}" class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-people"></i> 查看用户统计
-                </a>
+                <ul class="list-soft">
+                    <li>先保存基础配置，再测试 Cookie，有助于更快定位抓取链路问题。</li>
+                    <li>如果论坛活跃度很高，建议先增大轮询间隔，再观察通知压力。</li>
+                    <li>在容器环境里使用 DrissionPage 时，优先确认浏览器环境与 Xvfb 可用性。</li>
+                </ul>
             </div>
         </div>
     </div>
-</div>
+</section>
 {% endblock %}
 
 {% block extra_js %}
@@ -283,7 +386,7 @@ async function testCookie() {
 
         if (data.valid) {
             resultDiv.className = 'alert alert-success';
-            resultDiv.innerHTML = '<i class="bi bi-check-circle"></i> ' + (data.message || 'Cookie 有效！');
+            resultDiv.innerHTML = '<i class="bi bi-check-circle"></i> ' + (data.message || 'Cookie 有效');
         } else {
             resultDiv.className = 'alert alert-danger';
             resultDiv.innerHTML = '<i class="bi bi-x-circle"></i> ' + (data.error || '未知错误');
