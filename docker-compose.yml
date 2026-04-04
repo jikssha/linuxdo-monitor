@@ -1,8 +1,6 @@
 services:
   linuxdo-monitor:
-    build:
-      context: .
-    image: linuxdo-monitor:latest
+    image: ${IMAGE_NAME:-ghcr.io/jikssha/linuxdo-monitor}:${IMAGE_TAG:-latest}
     container_name: linuxdo-monitor
     restart: unless-stopped
     ports:
