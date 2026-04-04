@@ -141,6 +141,7 @@ class Database:
                     name TEXT NOT NULL,
                     slug TEXT,
                     description TEXT,
+                    parent_category_id INTEGER,
                     PRIMARY KEY (id, forum)
                 );
 
@@ -162,6 +163,8 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_user_subscriptions_author ON user_subscriptions(author);
                 CREATE INDEX IF NOT EXISTS idx_user_subscriptions_forum ON user_subscriptions(forum);
                 CREATE INDEX IF NOT EXISTS idx_subscribe_all_forum ON subscribe_all(forum);
+                CREATE INDEX IF NOT EXISTS idx_categories_forum ON categories(forum);
+                CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_category_id, forum);
             """)
 
             # 自动迁移
@@ -176,7 +179,7 @@ class Database:
             if row and row[0]:
                 current_version = row[0]
             
-            target_version = 6
+            target_version = 7
             if current_version < target_version:
                 logger = logging.getLogger(__name__)
                 logger.info(f"Database migration needed: v{current_version} -> v{target_version}")
@@ -199,12 +202,21 @@ class Database:
                     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_unique ON subscriptions(chat_id, keyword, category_id, forum) WHERE category_id IS NOT NULL")
                     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_unique_null ON subscriptions(chat_id, keyword, forum) WHERE category_id IS NULL")
 
-                    # Record migration
-                    now = datetime.now().isoformat()
-                    # Record migration
-                    now = datetime.now().isoformat()
-                    conn.execute("INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)", (target_version, now))
-                    logger.info(f"Database initialized to v{target_version}")
+                if current_version < 7:
+                    try:
+                        conn.execute("ALTER TABLE categories ADD COLUMN parent_category_id INTEGER")
+                    except sqlite3.OperationalError:
+                        pass
+
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_categories_forum ON categories(forum)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_category_id, forum)")
+
+                now = datetime.now().isoformat()
+                conn.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
+                    (target_version, now),
+                )
+                logger.info(f"Database initialized to v{target_version}")
                     
         except Exception as e:
             # Log error but don't fail, as tables might be locked or issues might be minor
@@ -724,18 +736,114 @@ class Database:
             ).fetchone()
         return row["name"] if row else None
 
+    def get_category_display_name(self, category_id: int, forum: str = DEFAULT_FORUM) -> Optional[str]:
+        """Get category display name, including parent category when applicable."""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT c.name AS name, p.name AS parent_name
+                FROM categories c
+                LEFT JOIN categories p
+                    ON c.parent_category_id = p.id
+                   AND c.forum = p.forum
+                WHERE c.id = ? AND c.forum = ?
+                """,
+                (category_id, forum),
+            ).fetchone()
+        if not row:
+            return None
+        if row["parent_name"]:
+            return f"{row['parent_name']} / {row['name']}"
+        return row["name"]
+
     def get_all_categories(self, forum: str = DEFAULT_FORUM) -> dict:
         """Get all categories for a forum as a dict mapping id -> name"""
         with self._get_conn() as conn:
             rows = conn.execute(
-                "SELECT id, name FROM categories WHERE forum = ?", (forum,)
+                "SELECT id, name FROM categories WHERE forum = ? ORDER BY COALESCE(parent_category_id, id), parent_category_id IS NOT NULL, name",
+                (forum,),
             ).fetchall()
         return {row["id"]: row["name"] for row in rows}
-    def sync_categories(self, categories: dict, forum: str = DEFAULT_FORUM) -> None:
-        """Sync categories to database"""
+
+    def get_root_categories(self, forum: str = DEFAULT_FORUM) -> dict:
+        """Get top-level categories for a forum as a dict mapping id -> name."""
         with self._get_conn() as conn:
-            for cat_id, name in categories.items():
+            rows = conn.execute(
+                """
+                SELECT id, name
+                FROM categories
+                WHERE forum = ? AND parent_category_id IS NULL
+                ORDER BY name
+                """,
+                (forum,),
+            ).fetchall()
+        return {row["id"]: row["name"] for row in rows}
+
+    def get_child_categories(self, parent_category_id: int, forum: str = DEFAULT_FORUM) -> dict:
+        """Get child categories for a parent category as a dict mapping id -> name."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, name
+                FROM categories
+                WHERE forum = ? AND parent_category_id = ?
+                ORDER BY name
+                """,
+                (forum, parent_category_id),
+            ).fetchall()
+        return {row["id"]: row["name"] for row in rows}
+
+    def sync_categories(self, categories, forum: str = DEFAULT_FORUM) -> None:
+        """Sync categories to database."""
+        if not categories:
+            return
+
+        normalized_categories = []
+        if isinstance(categories, dict):
+            normalized_categories = [
+                {
+                    "id": cat_id,
+                    "name": name,
+                    "slug": None,
+                    "description": None,
+                    "parent_category_id": None,
+                }
+                for cat_id, name in categories.items()
+            ]
+        else:
+            for category in categories:
+                category_id = category.get("id")
+                name = category.get("name")
+                if category_id is None or not name:
+                    continue
+                normalized_categories.append(
+                    {
+                        "id": category_id,
+                        "name": name,
+                        "slug": category.get("slug"),
+                        "description": category.get("description"),
+                        "parent_category_id": category.get("parent_category_id"),
+                    }
+                )
+
+        if not normalized_categories:
+            return
+
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM categories WHERE forum = ?", (forum,))
+            for category in normalized_categories:
                 conn.execute(
-                    "INSERT OR REPLACE INTO categories (id, name, forum) VALUES (?, ?, ?)",
-                    (cat_id, name, forum)
+                    """
+                    INSERT OR REPLACE INTO categories
+                        (id, name, slug, description, parent_category_id, forum)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        category["id"],
+                        category["name"],
+                        category["slug"],
+                        category["description"],
+                        category["parent_category_id"],
+                        forum,
+                    ),
                 )

@@ -210,7 +210,7 @@
                                     placeholder="粘贴完整 Cookie，系统会提取关键字段..."
                                 >{{ forum_config.discourse_cookie or '' }}</textarea>
                                 <div class="form-text">
-                                    直接粘贴浏览器完整 Cookie 即可，系统会自动提取 <code>_t</code> 与 <code>_forum_session</code>。
+                                    直接粘贴浏览器请求头里的完整 Cookie。系统会保存标准化后的完整 Cookie 字符串，用于分类同步和受限内容抓取。
                                 </div>
                                 <button type="button" class="btn btn-primary mt-3" onclick="testCookie()">
                                     <i class="bi bi-check-circle"></i> 测试 Cookie 有效性

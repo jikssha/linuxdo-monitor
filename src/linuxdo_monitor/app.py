@@ -178,6 +178,15 @@ class Application:
         # Invalidate cache on config change
         self.cache.clear_all()
 
+        if new_forum_config.source_type == SourceType.DISCOURSE:
+            try:
+                categories = self.source.get_categories()
+                if categories:
+                    self.db.sync_categories(categories, forum=self.forum_id)
+                    logger.info(f"[{self.forum_id}] 🔄 热更新后已同步分类列表: {len(categories)} 个分类")
+            except Exception as e:
+                logger.warning(f"[{self.forum_id}] 热更新后分类同步失败: {e}")
+
         # Job IDs are unique per forum
         data_fetch_job_id = f"data_fetch_{self.forum_id}"
         cookie_check_job_id = f"cookie_check_{self.forum_id}"

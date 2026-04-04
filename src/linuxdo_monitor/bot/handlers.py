@@ -1,7 +1,8 @@
+import uuid
 import logging
 from functools import wraps
 from typing import Optional
-import uuid
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
@@ -48,6 +49,124 @@ class BotHandlers:
         self.cache = cache or AppCache(forum_id=forum_id)  # Use shared cache if provided
         self.recommended_keywords = recommended_keywords or []
         self.recommended_users = recommended_users or []
+
+    def _get_pending_add_request(self, context: ContextTypes.DEFAULT_TYPE, request_id: str) -> Optional[dict]:
+        """Get pending keyword add request, supporting legacy string payloads."""
+        pending_adds = context.user_data.get("pending_adds", {})
+        pending_request = pending_adds.get(request_id)
+        if isinstance(pending_request, str):
+            pending_request = {"keyword": pending_request}
+            pending_adds[request_id] = pending_request
+        return pending_request
+
+    def _clear_pending_add_request(self, context: ContextTypes.DEFAULT_TYPE, request_id: str) -> None:
+        """Remove a pending keyword add request."""
+        pending_adds = context.user_data.get("pending_adds", {})
+        pending_adds.pop(request_id, None)
+        if not pending_adds:
+            context.user_data.pop("pending_adds", None)
+
+    def _build_category_buttons(self, categories: dict, *, callback_prefix: str, request_id: str) -> list:
+        """Build category selection buttons, two categories per row."""
+        keyboard = []
+        row = []
+        for category_id, name in categories.items():
+            row.append(
+                InlineKeyboardButton(
+                    name,
+                    callback_data=f"{callback_prefix}:{category_id}:{request_id}",
+                )
+            )
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        return keyboard
+
+    def _build_root_category_keyboard(self, request_id: str) -> InlineKeyboardMarkup:
+        """Build the top-level category keyboard."""
+        categories = self.db.get_root_categories(forum=self.forum_id)
+        if not categories:
+            categories = self.db.get_all_categories(forum=self.forum_id)
+
+        keyboard = [
+            [InlineKeyboardButton("🌐 所有分类 (全站)", callback_data=f"sel_cat:0:{request_id}")]
+        ]
+        keyboard.extend(
+            self._build_category_buttons(
+                categories,
+                callback_prefix="sel_cat",
+                request_id=request_id,
+            )
+        )
+        keyboard.append([InlineKeyboardButton("❌ 取消", callback_data=f"cancel_add_kw:{request_id}")])
+        return InlineKeyboardMarkup(keyboard)
+
+    def _build_child_category_keyboard(self, parent_category_id: int, request_id: str) -> InlineKeyboardMarkup:
+        """Build child category selection keyboard."""
+        child_categories = self.db.get_child_categories(parent_category_id, forum=self.forum_id)
+        parent_name = self.db.get_category_name(parent_category_id, forum=self.forum_id) or "主分类"
+
+        keyboard = [
+            [InlineKeyboardButton(f"📂 仅监听 {parent_name}", callback_data=f"sel_main:{parent_category_id}:{request_id}")]
+        ]
+        keyboard.extend(
+            self._build_category_buttons(
+                child_categories,
+                callback_prefix="sel_sub",
+                request_id=request_id,
+            )
+        )
+        keyboard.append([
+            InlineKeyboardButton("⬅️ 返回分类", callback_data=f"back_cat:{request_id}"),
+            InlineKeyboardButton("❌ 取消", callback_data=f"cancel_add_kw:{request_id}"),
+        ])
+        return InlineKeyboardMarkup(keyboard)
+
+    async def _finalize_keyword_subscription(
+        self,
+        query,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        request_id: str,
+        keyword: str,
+        category_id: Optional[int],
+    ) -> None:
+        """Persist keyword subscription and send confirmation messages."""
+        self._clear_pending_add_request(context, request_id)
+
+        subscription = self.db.add_subscription(
+            chat_id,
+            keyword,
+            forum=self.forum_id,
+            category_id=category_id,
+        )
+
+        if subscription:
+            self.cache.invalidate_keywords()
+            self.cache.invalidate_subscribers(keyword)
+
+            cat_name = "全站"
+            if category_id:
+                cat_name = (
+                    self.db.get_category_display_name(category_id, forum=self.forum_id)
+                    or self.db.get_category_name(category_id, forum=self.forum_id)
+                    or cat_name
+                )
+
+            pattern_hint = "（正则模式）" if is_regex_pattern(keyword) else ""
+
+            await query.edit_message_text(
+                f"✅ 成功订阅关键词{pattern_hint}：{keyword}\n"
+                f"📂 监控分类：{cat_name}"
+            )
+
+            text, keyboard = self._build_keyword_list_message(chat_id)
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+            return
+
+        await query.edit_message_text(f"⚠️ 您已经订阅了关键词：{keyword} (相同分类)")
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command - register user"""
@@ -185,32 +304,11 @@ class BotHandlers:
 
         # Store keyword in user_data with unique ID to support concurrent adds
         request_id = str(uuid.uuid4())[:8]
-        context.user_data.setdefault("pending_adds", {})[request_id] = keyword
-        
-        # Get categories
-        categories = self.db.get_all_categories(forum=self.forum_id)
-        
-        # Build category keyboard
-        keyboard = []
-        # "All Categories" button
-        keyboard.append([InlineKeyboardButton("🌐 所有分类 (全站)", callback_data=f"sel_cat:0:{request_id}")])
-        
-        # Category buttons (2 per row)
-        row = []
-        for cat_id, name in categories.items():
-            row.append(InlineKeyboardButton(name, callback_data=f"sel_cat:{cat_id}:{request_id}"))
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
-        if row:
-            keyboard.append(row)
-            
-        # Cancel button
-        keyboard.append([InlineKeyboardButton("❌ 取消", callback_data=f"cancel_add_kw:{request_id}")])
-        
+        context.user_data.setdefault("pending_adds", {})[request_id] = {"keyword": keyword}
+
         await update.message.reply_text(
             f"👇 请为关键词「{keyword}」选择监控分类：",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=self._build_root_category_keyboard(request_id)
         )
 
     @require_registration
@@ -257,7 +355,7 @@ class BotHandlers:
                 kw = sub.keyword
                 cat_name = ""
                 if sub.category_id:
-                    cat = self.db.get_category_name(sub.category_id, forum=self.forum_id)
+                    cat = self.db.get_category_display_name(sub.category_id, forum=self.forum_id)
                     if cat:
                         cat_name = f" ({cat})"
                 
@@ -559,55 +657,102 @@ class BotHandlers:
                 await safe_answer("❌ 按钮已过期", show_alert=True)
                 return
 
-            pending_adds = context.user_data.get("pending_adds", {})
-            pending_kw = pending_adds.pop(request_id, None)
-            
-            # Use 'pending_add_keyword' as fallback for very old pending requests (backward compat not strictly needed but safe)
-            if not pending_kw and "pending_add_keyword" in context.user_data:
-                 pending_kw = context.user_data.pop("pending_add_keyword")
+            pending_request = self._get_pending_add_request(context, request_id)
 
-            if not pending_kw:
+            if not pending_request:
                 await safe_answer("❌ 会话已过期，请重新使用 /add 命令", show_alert=True)
                 await query.edit_message_text("❌ 会话已过期，请重新添加")
                 return
-            
+
+            pending_kw = pending_request.get("keyword")
             await safe_answer()
-            category_id = int(cat_id_str) if cat_id_str != "0" else None
-            
-            # Add subscription
-            subscription = self.db.add_subscription(chat_id, pending_kw, forum=self.forum_id, category_id=category_id)
-            
-            if subscription:
-                self.cache.invalidate_keywords()
-                self.cache.invalidate_subscribers(pending_kw)
-                
-                cat_name = "全站"
-                if category_id:
-                    name = self.db.get_category_name(category_id, forum=self.forum_id)
-                    if name:
-                        cat_name = name
-                
-                # Verify usage of regex
-                pattern_hint = "（正则模式）" if is_regex_pattern(pending_kw) else ""
-                
-                await query.edit_message_text(
-                    f"✅ 成功订阅关键词{pattern_hint}：{pending_kw}\n"
-                    f"📂 监控分类：{cat_name}"
+
+            if cat_id_str == "0":
+                await self._finalize_keyword_subscription(
+                    query,
+                    context,
+                    chat_id,
+                    request_id,
+                    pending_kw,
+                    None,
                 )
-                
-                # Show list
-                text, keyboard = self._build_keyword_list_message(chat_id)
-                await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
-            else:
-                await query.edit_message_text(f"⚠️ 您已经订阅了关键词：{pending_kw} (相同分类)")
+                return
+
+            category_id = int(cat_id_str)
+            child_categories = self.db.get_child_categories(category_id, forum=self.forum_id)
+            if child_categories:
+                category_name = self.db.get_category_name(category_id, forum=self.forum_id) or "所选分类"
+                await query.edit_message_text(
+                    f"👇 已选择主分类「{category_name}」，请选择具体等级分类：",
+                    reply_markup=self._build_child_category_keyboard(category_id, request_id)
+                )
+                return
+
+            await self._finalize_keyword_subscription(
+                query,
+                context,
+                chat_id,
+                request_id,
+                pending_kw,
+                category_id,
+            )
+
+        elif query.data.startswith("sel_main:"):
+            _, category_id_str, request_id = query.data.split(":")
+            pending_request = self._get_pending_add_request(context, request_id)
+            if not pending_request:
+                await safe_answer("❌ 会话已过期，请重新使用 /add 命令", show_alert=True)
+                await query.edit_message_text("❌ 会话已过期，请重新添加")
+                return
+
+            await safe_answer()
+            await self._finalize_keyword_subscription(
+                query,
+                context,
+                chat_id,
+                request_id,
+                pending_request["keyword"],
+                int(category_id_str),
+            )
+
+        elif query.data.startswith("sel_sub:"):
+            _, category_id_str, request_id = query.data.split(":")
+            pending_request = self._get_pending_add_request(context, request_id)
+            if not pending_request:
+                await safe_answer("❌ 会话已过期，请重新使用 /add 命令", show_alert=True)
+                await query.edit_message_text("❌ 会话已过期，请重新添加")
+                return
+
+            await safe_answer()
+            await self._finalize_keyword_subscription(
+                query,
+                context,
+                chat_id,
+                request_id,
+                pending_request["keyword"],
+                int(category_id_str),
+            )
+
+        elif query.data.startswith("back_cat:"):
+            _, request_id = query.data.split(":")
+            pending_request = self._get_pending_add_request(context, request_id)
+            if not pending_request:
+                await safe_answer("❌ 会话已过期，请重新使用 /add 命令", show_alert=True)
+                await query.edit_message_text("❌ 会话已过期，请重新添加")
+                return
+
+            await safe_answer()
+            await query.edit_message_text(
+                f"👇 请为关键词「{pending_request['keyword']}」选择监控分类：",
+                reply_markup=self._build_root_category_keyboard(request_id),
+            )
                 
         elif query.data.startswith("cancel_add_kw"):
              # Handle cancel with ID if present
              parts = query.data.split(":")
              if len(parts) > 1:
                  request_id = parts[1]
-                 if "pending_adds" in context.user_data:
-                     context.user_data["pending_adds"].pop(request_id, None)
+                 self._clear_pending_add_request(context, request_id)
              elif "pending_add_keyword" in context.user_data:
                  del context.user_data["pending_add_keyword"]
              

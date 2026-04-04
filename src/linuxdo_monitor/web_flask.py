@@ -10,8 +10,9 @@ from flask import Flask, Blueprint, render_template, request, redirect, url_for,
 
 from .utils import (
     extract_json_from_html,
-    extract_needed_cookies,
     generate_random_password,
+    normalize_cookie,
+    parse_cookie_string,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def test_cookie(cookie: str, base_url: str = "https://linux.do", flaresolverr_ur
         - error_type: str - "service_error" (FlareSolverr/network issue) or "cookie_invalid" (cookie expired)
     """
     try:
-        needed_cookies = extract_needed_cookies(cookie)
+        parsed_cookies = parse_cookie_string(cookie)
         url = f"{base_url}/notifications.json"
 
         if flaresolverr_url:
@@ -37,8 +38,8 @@ def test_cookie(cookie: str, base_url: str = "https://linux.do", flaresolverr_ur
                 "url": url,
                 "maxTimeout": 60000,
             }
-            if needed_cookies:
-                payload["cookies"] = [{"name": k, "value": v} for k, v in needed_cookies.items()]
+            if parsed_cookies:
+                payload["cookies"] = [{"name": k, "value": v} for k, v in parsed_cookies.items()]
 
             resp = std_requests.post(f"{flaresolverr_url}/v1", json=payload, timeout=90)
             resp.raise_for_status()
@@ -460,11 +461,7 @@ class ConfigWebServer:
             # Process cookie
             raw_cookie = request.form.get('discourse_cookie', '')
             if raw_cookie:
-                needed = extract_needed_cookies(raw_cookie)
-                if needed:
-                    target['discourse_cookie'] = "; ".join(f"{k}={v}" for k, v in needed.items())
-                else:
-                    target['discourse_cookie'] = raw_cookie
+                target['discourse_cookie'] = normalize_cookie(raw_cookie)
             else:
                 target['discourse_cookie'] = ""
 

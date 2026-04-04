@@ -7,7 +7,7 @@ from typing import Tuple
 logger = logging.getLogger(__name__)
 
 # 当前数据库版本
-CURRENT_VERSION = 6
+CURRENT_VERSION = 7
 
 # 迁移脚本
 MIGRATIONS = {
@@ -139,6 +139,12 @@ MIGRATIONS = {
         "DROP INDEX IF EXISTS idx_subscriptions_unique",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_unique ON subscriptions(chat_id, keyword, category_id, forum) WHERE category_id IS NOT NULL",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_unique_null ON subscriptions(chat_id, keyword, forum) WHERE category_id IS NULL",
+    ],
+
+    # 版本 7: categories 表支持父子分类
+    7: [
+        "ALTER TABLE categories ADD COLUMN parent_category_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_category_id, forum)",
     ],
 }
 

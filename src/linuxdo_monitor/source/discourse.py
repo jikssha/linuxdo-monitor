@@ -5,14 +5,14 @@ import re
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 from urllib.parse import urlparse
 
 import requests as std_requests
 from curl_cffi import requests
 
 from ..models import Post
-from ..utils import extract_json_from_html
+from ..utils import extract_json_from_html, extract_preloaded_json_objects, parse_cookie_string
 from .rss import RSSSource
 from .base import BaseSource
 
@@ -74,46 +74,187 @@ class DiscourseSource(BaseSource):
         url = f"{self.base_url}/latest.json?order=created"
 
         try:
-            if self.cf_bypass_mode == "drissionpage":
-                data = self._fetch_json_via_drissionpage(url)
-            elif self.flaresolverr_url:
-                logger.info(f"[{self.forum_tag}][cf] FlareSolverr 模式抓取 JSON")
-                data = self._fetch_json_via_flaresolverr(url)
-            else:
-                logger.info(f"[{self.forum_tag}][cf] 直接请求（无 CF 代理）抓取 JSON")
-                data = self._fetch_json_direct(url)
-
+            data = self._fetch_json(url, action="抓取 JSON")
             return self._parse_response(data)
         except Exception as e:
             logger.warning(f"[{self.forum_tag}] JSON 抓取失败: {e}，尝试 RSS 兜底...")
             rss_url = self.rss_url or f"{self.base_url}/latest.rss"
             return RSSSource(url=rss_url, timeout=self.timeout).fetch()
 
-    def get_categories(self) -> dict:
-        """Fetch all categories from Discourse
-        
-        Returns:
-            dict: {id: name} mapping
-        """
-        url = f"{self.base_url}/site.json"
-        
+    def get_categories(self) -> List[dict]:
+        """Fetch all categories from Discourse, including one level of child categories."""
         try:
-            # Reuse fetch logic but for site.json
-            if self.cf_bypass_mode == "drissionpage":
-                data = self._fetch_json_via_drissionpage(url)
-            elif self.flaresolverr_url:
-                data = self._fetch_json_via_flaresolverr(url)
-            else:
-                data = self._fetch_json_direct(url)
+            categories_by_id: Dict[int, dict] = {}
+            payloads: List[dict] = []
 
-            categories = {}
-            for cat in data.get("categories", []):
-                categories[cat["id"]] = cat["name"]
-                
-            return categories
+            primary_urls = [
+                (f"{self.base_url}/categories.json", "同步完整分类"),
+                (f"{self.base_url}/site.json", "同步基础分类"),
+            ]
+            for url, action in primary_urls:
+                try:
+                    payloads.append(self._fetch_json(url, action=action))
+                except Exception as e:
+                    logger.debug(f"[{self.forum_tag}] 分类同步请求失败 {url}: {e}")
+
+            try:
+                categories_html = self._fetch_text(
+                    f"{self.base_url}/categories",
+                    action="读取分类页",
+                )
+                payloads.extend(extract_preloaded_json_objects(categories_html))
+            except Exception as e:
+                logger.debug(f"[{self.forum_tag}] 分类页 HTML 读取失败: {e}")
+
+            for payload in payloads:
+                for raw_category in self._extract_category_candidates(payload):
+                    category = self._normalize_category(raw_category)
+                    if category:
+                        categories_by_id[category["id"]] = category
+
+            top_level_categories = [
+                category
+                for category in categories_by_id.values()
+                if category["parent_category_id"] is None
+            ]
+
+            for parent in top_level_categories:
+                for child in self._fetch_child_categories(parent):
+                    categories_by_id[child["id"]] = child
+
+            return list(categories_by_id.values())
         except Exception as e:
             logger.error(f"[{self.forum_tag}] 获取分类列表失败: {e}")
-            return {}
+            return []
+
+    def _fetch_json(self, url: str, *, action: str = "请求 JSON") -> dict:
+        """Fetch JSON using the configured CF bypass strategy."""
+        if self.cf_bypass_mode == "drissionpage":
+            logger.info(f"[{self.forum_tag}][cf] DrissionPage 模式{action}")
+            return self._fetch_json_via_drissionpage(url)
+        if self.flaresolverr_url:
+            logger.info(f"[{self.forum_tag}][cf] FlareSolverr 模式{action}")
+            return self._fetch_json_via_flaresolverr(url)
+        logger.info(f"[{self.forum_tag}][cf] 直接请求（无 CF 代理）{action}")
+        return self._fetch_json_direct(url)
+
+    def _fetch_text(self, url: str, *, action: str = "请求页面") -> str:
+        """Fetch HTML/text using the configured CF bypass strategy."""
+        if self.flaresolverr_url and self.cf_bypass_mode != "drissionpage":
+            logger.info(f"[{self.forum_tag}][cf] FlareSolverr 模式{action}")
+            return self._fetch_text_via_flaresolverr(url)
+        logger.info(f"[{self.forum_tag}][cf] 直接请求（无 CF 代理）{action}")
+        return self._fetch_text_direct(url)
+
+    def _extract_category_candidates(self, data: dict) -> List[dict]:
+        """Extract category objects from multiple Discourse payload shapes."""
+        candidates: List[dict] = []
+
+        def append_collection(collection) -> None:
+            if isinstance(collection, list):
+                for item in collection:
+                    if isinstance(item, dict):
+                        candidates.append(item)
+            elif isinstance(collection, dict):
+                nested = collection.get("categories")
+                if isinstance(nested, list):
+                    append_collection(nested)
+
+        append_collection(data.get("categories"))
+        append_collection(data.get("category_list"))
+        append_collection(data.get("subcategory_list"))
+
+        category = data.get("category")
+        if isinstance(category, dict):
+            candidates.append(category)
+
+        return candidates
+
+    def _normalize_category(
+        self,
+        category: dict,
+        *,
+        fallback_parent_category_id: Optional[int] = None,
+    ) -> Optional[dict]:
+        """Normalize a Discourse category payload into the local schema."""
+        category_id = category.get("id")
+        name = category.get("name")
+        if category_id is None or not name:
+            return None
+
+        parent_category_id = category.get("parent_category_id")
+        if parent_category_id in ("", 0):
+            parent_category_id = None
+        if parent_category_id is None:
+            parent_category_id = fallback_parent_category_id
+
+        return {
+            "id": int(category_id),
+            "name": name,
+            "slug": category.get("slug"),
+            "description": category.get("description"),
+            "parent_category_id": int(parent_category_id) if parent_category_id is not None else None,
+        }
+
+    def _fetch_child_categories(self, parent_category: dict) -> List[dict]:
+        """Fetch child categories for a parent category."""
+        parent_id = parent_category["id"]
+        parent_slug = parent_category.get("slug")
+        candidate_urls = []
+
+        if parent_slug:
+            candidate_urls.extend(
+                [
+                    f"{self.base_url}/c/{parent_slug}/{parent_id}/show.json",
+                    f"{self.base_url}/c/{parent_slug}/{parent_id}.json",
+                    f"{self.base_url}/c/{parent_slug}/{parent_id}/l/latest.json",
+                ]
+            )
+
+        candidate_urls.extend(
+            [
+                f"{self.base_url}/c/{parent_id}/show.json",
+                f"{self.base_url}/c/{parent_id}.json",
+            ]
+        )
+
+        visited_urls: Set[str] = set()
+        for url in candidate_urls:
+            if url in visited_urls:
+                continue
+            visited_urls.add(url)
+
+            try:
+                data = self._fetch_json(url, action=f"读取分类「{parent_category['name']}」详情")
+            except Exception as e:
+                logger.debug(f"[{self.forum_tag}] 读取分类详情失败 {url}: {e}")
+                continue
+
+            declared_child_ids = set()
+            category_meta = data.get("category")
+            if isinstance(category_meta, dict):
+                declared_child_ids = {
+                    int(child_id)
+                    for child_id in category_meta.get("subcategory_ids", [])
+                    if isinstance(child_id, int) or (isinstance(child_id, str) and child_id.isdigit())
+                }
+
+            child_categories: List[dict] = []
+            for raw_category in self._extract_category_candidates(data):
+                normalized = self._normalize_category(raw_category)
+                if not normalized or normalized["id"] == parent_id:
+                    continue
+
+                if normalized["parent_category_id"] == parent_id:
+                    child_categories.append(normalized)
+                elif normalized["id"] in declared_child_ids:
+                    normalized["parent_category_id"] = parent_id
+                    child_categories.append(normalized)
+
+            if child_categories:
+                return child_categories
+
+        return []
 
     def _fetch_json_direct(self, url: str, *, allow_refresh: bool = True) -> dict:
         # This method is now implemented fully below as modification of _fetch_direct
@@ -184,17 +325,10 @@ class DiscourseSource(BaseSource):
             payload["session"] = session_id
 
         if self.cookie:
-            # 支持多种分隔格式
-            normalized = self.cookie.replace("\r\n", ";").replace("\n", ";").replace(";;", ";")
-            cookies = []
-            for item in normalized.split(";"):
-                item = item.strip()
-                if "=" in item:
-                    k, v = item.split("=", 1)
-                    k = k.strip()
-                    if k in ("_t", "_forum_session"):
-                        cookies.append({"name": k, "value": v})
-            payload["cookies"] = cookies
+            payload["cookies"] = [
+                {"name": k, "value": v}
+                for k, v in parse_cookie_string(self.cookie).items()
+            ]
 
         last_error = None
         for attempt in range(1, max_retries + 1):
@@ -249,6 +383,91 @@ class DiscourseSource(BaseSource):
         except Exception as e:
             logger.error(f"RSS 兜底也失败了: {e}")
             raise last_error
+
+    def _fetch_text_via_flaresolverr(self, url: str, max_retries: int = 3) -> str:
+        """通过 FlareSolverr 获取 HTML/text。"""
+        session_id = self._get_or_create_session()
+
+        payload = {
+            "cmd": "request.get",
+            "url": url,
+            "maxTimeout": self._flaresolverr_max_timeout_ms,
+            "userAgent": self.user_agent,
+        }
+        if session_id:
+            payload["session"] = session_id
+        if self.cookie:
+            payload["cookies"] = [
+                {"name": k, "value": v}
+                for k, v in parse_cookie_string(self.cookie).items()
+            ]
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = std_requests.post(
+                    f"{self.flaresolverr_url}/v1",
+                    json=payload,
+                    timeout=self._flaresolverr_request_timeout,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                if result.get("status") != "ok":
+                    raise Exception(f"FlareSolverr error: {result.get('message', 'Unknown error')}")
+                return result["solution"]["response"]
+            except Exception as e:
+                last_error = e
+                logger.warning(f"FlareSolverr 页面请求失败 (尝试 {attempt}/{max_retries}): {e}")
+                if attempt == 1 and session_id:
+                    self._destroy_session()
+                    session_id = self._get_or_create_session()
+                    if session_id:
+                        payload["session"] = session_id
+                if attempt < max_retries:
+                    time.sleep(self._flaresolverr_retry_sleep)
+        raise last_error
+
+    def _fetch_text_direct(self, url: str, *, allow_refresh: bool = True) -> str:
+        """直接请求 HTML/text 页面。"""
+        headers = {
+            "User-Agent": self.user_agent,
+            "Cookie": self.cookie,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Referer": f"{self.base_url}/",
+        }
+
+        last_error = None
+        for attempt in range(1, self._direct_retries + 1):
+            try:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=self._direct_timeout,
+                    impersonate="chrome131",
+                )
+                response.raise_for_status()
+                self._direct_fail_streak = 0
+                return response.text
+            except Exception as e:
+                last_error = e
+                is_403 = "403" in str(e) or (
+                    hasattr(e, "response")
+                    and getattr(e, "response", None)
+                    and getattr(e.response, "status_code", None) == 403
+                )
+
+                if is_403 and allow_refresh and self.cf_bypass_mode == "drissionpage":
+                    logger.warning(f"[{self.forum_tag}][cf] 页面请求 403，尝试 DrissionPage 刷新后重试一次")
+                    refreshed_cookie = self._refresh_cookie_via_drissionpage()
+                    if refreshed_cookie:
+                        return self._fetch_text_direct(url, allow_refresh=False)
+
+                if attempt < self._direct_retries and not is_403:
+                    time.sleep(self._direct_retry_sleep)
+                    continue
+
+                raise last_error
 
     def _fetch_json_direct(self, url: str, *, allow_refresh: bool = True) -> dict:
         """直接请求（需要有效的 cf_clearance）
