@@ -4,7 +4,7 @@ import json
 import re
 import secrets
 import string
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 
 
 def extract_json_from_html(text: str) -> str:
@@ -76,6 +76,29 @@ def extract_preloaded_json_objects(text: str) -> List[dict]:
             objects.append(obj)
 
     return objects
+
+
+def category_matches(
+    subscription_category_id: Optional[int],
+    post_category_id: Optional[int],
+    category_parent_map: Dict[int, Optional[int]],
+) -> bool:
+    """Return True when a subscription category should match a post category."""
+    if subscription_category_id is None:
+        return True
+    if post_category_id is None:
+        return False
+    if subscription_category_id == post_category_id:
+        return True
+
+    current_category_id = post_category_id
+    visited: Set[int] = set()
+    while current_category_id is not None and current_category_id not in visited:
+        visited.add(current_category_id)
+        current_category_id = category_parent_map.get(current_category_id)
+        if current_category_id == subscription_category_id:
+            return True
+    return False
 
 
 def generate_random_password(length: int = 16) -> str:

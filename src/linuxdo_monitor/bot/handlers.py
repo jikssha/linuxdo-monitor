@@ -109,7 +109,7 @@ class BotHandlers:
         parent_name = self.db.get_category_name(parent_category_id, forum=self.forum_id) or "主分类"
 
         keyboard = [
-            [InlineKeyboardButton(f"📂 仅监听 {parent_name}", callback_data=f"sel_main:{parent_category_id}:{request_id}")]
+            [InlineKeyboardButton(f"📂 监听 {parent_name}（含所有等级）", callback_data=f"sel_main:{parent_category_id}:{request_id}")]
         ]
         keyboard.extend(
             self._build_category_buttons(
@@ -148,18 +148,21 @@ class BotHandlers:
             self.cache.invalidate_subscribers(keyword)
 
             cat_name = "全站"
+            scope_hint = ""
             if category_id:
                 cat_name = (
                     self.db.get_category_display_name(category_id, forum=self.forum_id)
                     or self.db.get_category_name(category_id, forum=self.forum_id)
                     or cat_name
                 )
+                if self.db.get_child_categories(category_id, forum=self.forum_id):
+                    scope_hint = "（含所有等级子分类）"
 
             pattern_hint = "（正则模式）" if is_regex_pattern(keyword) else ""
 
             await query.edit_message_text(
                 f"✅ 成功订阅关键词{pattern_hint}：{keyword}\n"
-                f"📂 监控分类：{cat_name}"
+                f"📂 监控分类：{cat_name}{scope_hint}"
             )
 
             text, keyboard = self._build_keyword_list_message(chat_id)
@@ -357,7 +360,10 @@ class BotHandlers:
                 if sub.category_id:
                     cat = self.db.get_category_display_name(sub.category_id, forum=self.forum_id)
                     if cat:
-                        cat_name = f" ({cat})"
+                        scope_hint = ""
+                        if self.db.get_child_categories(sub.category_id, forum=self.forum_id):
+                            scope_hint = "，含子分类"
+                        cat_name = f" ({cat}{scope_hint})"
                 
                 display = f"{kw}{cat_name}"
                 if len(display) > 20:
@@ -683,7 +689,7 @@ class BotHandlers:
             if child_categories:
                 category_name = self.db.get_category_name(category_id, forum=self.forum_id) or "所选分类"
                 await query.edit_message_text(
-                    f"👇 已选择主分类「{category_name}」，请选择具体等级分类：",
+                    f"👇 已选择主分类「{category_name}」，请选择具体等级分类，或直接监听该分类下所有等级帖子：",
                     reply_markup=self._build_child_category_keyboard(category_id, request_id)
                 )
                 return

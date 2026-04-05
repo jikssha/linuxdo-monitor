@@ -14,6 +14,7 @@ from .database import Database, DEFAULT_FORUM
 from .matcher.keyword import KeywordMatcher
 from .models import Post
 from .source import BaseSource, RSSSource, DiscourseSource
+from .utils import category_matches
 from .web_flask import test_cookie
 
 
@@ -458,6 +459,7 @@ class Application:
             keywords = self._get_keywords_cached()
             subscribe_all_users = self._get_subscribe_all_users_cached()
             subscribed_authors = set(self._get_subscribed_authors_cached())
+            category_parent_map = self.db.get_category_parent_map(forum=self.forum_id)
             post_ids = [post.id for post in posts]
             known_post_ids = self.db.get_existing_post_ids(post_ids, forum=self.forum_id)
             candidate_posts = []
@@ -517,8 +519,12 @@ class Application:
                             sub_category_id = sub['category_id']
 
                             # Category filtering:
-                            # If subscription has category_id, it MUST match post.category_id
-                            if sub_category_id is not None and sub_category_id != post.category_id:
+                            # Parent categories match their descendants; explicit subcategories remain exact.
+                            if not category_matches(
+                                sub_category_id,
+                                post.category_id,
+                                category_parent_map,
+                            ):
                                 continue
 
                             # Skip if already notified (subscribe_all or another keyword)

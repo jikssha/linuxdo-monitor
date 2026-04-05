@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from linuxdo_monitor.database import Database
+from linuxdo_monitor.utils import category_matches
 
 try:
     from linuxdo_monitor.source.discourse import DiscourseSource
@@ -39,6 +40,21 @@ class DatabaseCategoryHierarchyTests(unittest.TestCase):
             self.db.get_category_display_name(361),
             "福利羊毛 / 福利羊毛,Lv1",
         )
+        self.assertEqual(
+            self.db.get_category_parent_map(),
+            {36: None, 361: 36, 362: 36},
+        )
+
+    def test_parent_category_subscription_matches_descendants(self):
+        parent_map = {36: None, 361: 36, 362: 36, 500: 361}
+
+        self.assertTrue(category_matches(36, 36, parent_map))
+        self.assertTrue(category_matches(36, 361, parent_map))
+        self.assertTrue(category_matches(36, 500, parent_map))
+        self.assertFalse(category_matches(361, 36, parent_map))
+        self.assertTrue(category_matches(361, 361, parent_map))
+        self.assertTrue(category_matches(361, 500, parent_map))
+        self.assertFalse(category_matches(362, 361, parent_map))
 
 
 class DiscourseCategorySyncTests(unittest.TestCase):

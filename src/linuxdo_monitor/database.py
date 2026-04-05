@@ -793,6 +793,19 @@ class Database:
             ).fetchall()
         return {row["id"]: row["name"] for row in rows}
 
+    def get_category_parent_map(self, forum: str = DEFAULT_FORUM) -> Dict[int, Optional[int]]:
+        """Get category parent mapping for a forum as {category_id: parent_category_id}."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, parent_category_id
+                FROM categories
+                WHERE forum = ?
+                """,
+                (forum,),
+            ).fetchall()
+        return {row["id"]: row["parent_category_id"] for row in rows}
+
     def sync_categories(self, categories, forum: str = DEFAULT_FORUM) -> None:
         """Sync categories to database."""
         if not categories:
