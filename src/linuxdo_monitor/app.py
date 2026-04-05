@@ -134,6 +134,7 @@ class Application:
             self.db,
             forum_id=self.forum_id,
             forum_name=self.forum_name,
+            admin_chat_id=self.admin_chat_id,
             cache=self.cache,  # Pass shared cache to bot
             recommended_keywords=forum_config.recommended_keywords if hasattr(forum_config, "recommended_keywords") else None,
             recommended_users=forum_config.recommended_users if hasattr(forum_config, "recommended_users") else None
@@ -621,6 +622,7 @@ class Application:
 
         # Run initial fetch after bot starts
         async def post_init(app):
+            await self.bot.configure_commands()
             self.scheduler.start()
             logger.info(f"[{self.forum_id}] ⏰ 定时任务已启动, 每 {self.forum_config.fetch_interval} 秒拉取一次")
             if self.forum_config.source_type == SourceType.DISCOURSE and self.forum_config.cookie_check_interval > 0:
@@ -671,6 +673,7 @@ class Application:
 
         # Initialize and start bot
         await self.application.initialize()
+        await self.bot.configure_commands()
         await self.application.start()
         await self.application.updater.start_polling()
 

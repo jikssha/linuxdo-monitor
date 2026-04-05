@@ -13,10 +13,11 @@ from ..matcher.keyword import is_regex_pattern, validate_regex
 
 logger = logging.getLogger(__name__)
 
-# Maximum keywords per user
-MAX_KEYWORDS_PER_USER = 50
-# Maximum authors per user
-MAX_AUTHORS_PER_USER = 50
+# Subscription limits
+REGULAR_MAX_KEYWORDS_PER_USER = 5
+ADMIN_MAX_KEYWORDS_PER_USER = 50
+REGULAR_MAX_AUTHORS_PER_USER = 5
+ADMIN_MAX_AUTHORS_PER_USER = 50
 # Maximum keyword length (callback_data limit is 64 bytes, prefix "del_kw:" is 7 bytes)
 MAX_KEYWORD_LENGTH = 50
 
@@ -42,13 +43,35 @@ def require_registration(func):
 class BotHandlers:
     """Telegram bot command handlers with multi-forum support"""
 
-    def __init__(self, db: Database, forum_id: str = "linux-do", forum_name: str = "Linux.do", cache: AppCache = None, recommended_keywords: list = None, recommended_users: list = None):
+    def __init__(
+        self,
+        db: Database,
+        forum_id: str = "linux-do",
+        forum_name: str = "Linux.do",
+        admin_chat_id: Optional[int] = None,
+        cache: AppCache = None,
+        recommended_keywords: list = None,
+        recommended_users: list = None,
+    ):
         self.db = db
         self.forum_id = forum_id
         self.forum_name = forum_name
+        self.admin_chat_id = admin_chat_id
         self.cache = cache or AppCache(forum_id=forum_id)  # Use shared cache if provided
         self.recommended_keywords = recommended_keywords or []
         self.recommended_users = recommended_users or []
+
+    def _is_admin(self, chat_id: Optional[int]) -> bool:
+        """Return True when the chat belongs to the configured administrator."""
+        return chat_id is not None and self.admin_chat_id is not None and chat_id == self.admin_chat_id
+
+    def _get_keyword_limit(self, chat_id: Optional[int]) -> int:
+        """Get keyword subscription limit for a user."""
+        return ADMIN_MAX_KEYWORDS_PER_USER if self._is_admin(chat_id) else REGULAR_MAX_KEYWORDS_PER_USER
+
+    def _get_author_limit(self, chat_id: Optional[int]) -> int:
+        """Get author subscription limit for a user."""
+        return ADMIN_MAX_AUTHORS_PER_USER if self._is_admin(chat_id) else REGULAR_MAX_AUTHORS_PER_USER
 
     def _get_pending_add_request(self, context: ContextTypes.DEFAULT_TYPE, request_id: str) -> Optional[dict]:
         """Get pending keyword add request, supporting legacy string payloads."""
@@ -234,6 +257,11 @@ class BotHandlers:
 
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command"""
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        keyword_limit = self._get_keyword_limit(chat_id)
+        author_limit = self._get_author_limit(chat_id)
+        stats_help = "/stats - 查看统计（仅管理员）\n" if self._is_admin(chat_id) else ""
+
         await update.message.reply_text(
             "📖 帮助信息\n\n"
             "⚡ 首次使用请先发送 /start 注册\n\n"
@@ -254,7 +282,8 @@ class BotHandlers:
             "🌟 全部订阅：\n"
             "/add_all - 订阅所有新帖子\n"
             "/del_all - 取消订阅所有\n\n"
-            f"⚠️ 每位用户最多可订阅 {MAX_KEYWORDS_PER_USER} 个关键词和 {MAX_AUTHORS_PER_USER} 个用户\n\n"
+            f"{stats_help}"
+            f"⚠️ 您当前最多可订阅 {keyword_limit} 个关键词和 {author_limit} 个用户\n\n"
             "💡 示例：\n"
             "/add docker\n"
             "/add_user neo"
@@ -297,10 +326,11 @@ class BotHandlers:
                 return
 
         # Check keyword limit
+        keyword_limit = self._get_keyword_limit(chat_id)
         current_subscriptions = self.db.get_user_subscriptions(chat_id, forum=self.forum_id)
-        if len(current_subscriptions) >= MAX_KEYWORDS_PER_USER:
+        if len(current_subscriptions) >= keyword_limit:
             await update.message.reply_text(
-                f"❌ 您已达到关键词订阅上限（{MAX_KEYWORDS_PER_USER} 个）\n\n"
+                f"❌ 您已达到关键词订阅上限（{keyword_limit} 个）\n\n"
                 "请先使用 /del 取消一些订阅，或使用 /add_all 订阅所有帖子。"
             )
             return
@@ -349,8 +379,9 @@ class BotHandlers:
 
         if subscriptions:
             keywords = [sub.keyword for sub in subscriptions]
-            remaining = MAX_KEYWORDS_PER_USER - len(keywords)
-            lines.append(f"📋 关键词订阅（{len(keywords)}/{MAX_KEYWORDS_PER_USER}）：")
+            keyword_limit = self._get_keyword_limit(chat_id)
+            remaining = keyword_limit - len(keywords)
+            lines.append(f"📋 关键词订阅（{len(keywords)}/{keyword_limit}）：")
 
             # Build inline keyboard with delete buttons
             keyboard = []
@@ -478,10 +509,11 @@ class BotHandlers:
             return
 
         # Check author subscription limit
+        author_limit = self._get_author_limit(chat_id)
         current_count = self.db.get_user_subscription_count(chat_id, forum=self.forum_id)
-        if current_count >= MAX_AUTHORS_PER_USER:
+        if current_count >= author_limit:
             await update.message.reply_text(
-                f"❌ 您已达到用户订阅上限（{MAX_AUTHORS_PER_USER} 个）\n\n"
+                f"❌ 您已达到用户订阅上限（{author_limit} 个）\n\n"
                 "请先使用 /del_user 取消一些订阅。"
             )
             return
@@ -535,13 +567,15 @@ class BotHandlers:
         authors = self.db.get_user_author_subscriptions(chat_id, forum=self.forum_id)
 
         if not authors:
+            author_limit = self._get_author_limit(chat_id)
             return (
                 "📭 您还没有订阅任何用户\n\n"
-                f"使用 /add_user <用户名> 开始订阅（最多 {MAX_AUTHORS_PER_USER} 个）"
+                f"使用 /add_user <用户名> 开始订阅（最多 {author_limit} 个）"
             ), None
 
-        remaining = MAX_AUTHORS_PER_USER - len(authors)
-        text = f"👤 已订阅用户（{len(authors)}/{MAX_AUTHORS_PER_USER}）：\n📊 剩余可订阅：{remaining} 个"
+        author_limit = self._get_author_limit(chat_id)
+        remaining = author_limit - len(authors)
+        text = f"👤 已订阅用户（{len(authors)}/{author_limit}）：\n📊 剩余可订阅：{remaining} 个"
 
         keyboard = []
         for author in authors:
@@ -563,6 +597,11 @@ class BotHandlers:
     @require_registration
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /stats command - show keyword statistics"""
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not self._is_admin(chat_id):
+            await update.message.reply_text("⛔ 此命令仅管理员可用")
+            return
+
         stats = self.db.get_stats(forum=self.forum_id)
 
         await update.message.reply_text(
@@ -809,9 +848,10 @@ class BotHandlers:
         elif query.data.startswith("quick_kw:"):
             keyword = query.data[9:]
             # 检查数量限制
+            keyword_limit = self._get_keyword_limit(chat_id)
             current_count = len(self.db.get_user_subscriptions(chat_id, forum=self.forum_id))
-            if current_count >= MAX_KEYWORDS_PER_USER:
-                await safe_answer(f"已达上限 {MAX_KEYWORDS_PER_USER} 个，请先删除", show_alert=True)
+            if current_count >= keyword_limit:
+                await safe_answer(f"已达上限 {keyword_limit} 个，请先删除", show_alert=True)
                 return
             await safe_answer()
             if self.db.add_subscription(chat_id, keyword, forum=self.forum_id):
@@ -824,9 +864,10 @@ class BotHandlers:
         elif query.data.startswith("quick_user:"):
             author = query.data[11:]
             # 检查数量限制
+            author_limit = self._get_author_limit(chat_id)
             current_count = self.db.get_user_subscription_count(chat_id, forum=self.forum_id)
-            if current_count >= MAX_AUTHORS_PER_USER:
-                await safe_answer(f"已达上限 {MAX_AUTHORS_PER_USER} 个，请先删除", show_alert=True)
+            if current_count >= author_limit:
+                await safe_answer(f"已达上限 {author_limit} 个，请先删除", show_alert=True)
                 return
             await safe_answer()
             if self.db.add_user_subscription(chat_id, author, forum=self.forum_id):

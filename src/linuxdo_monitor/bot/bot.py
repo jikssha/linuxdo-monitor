@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from telegram import Update
+from typing import Optional
+from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import Forbidden, TelegramError, TimedOut, NetworkError
@@ -28,12 +29,30 @@ RETRY_DELAY = 2.0       # 重试间隔（秒）
 class TelegramBot:
     """Telegram bot wrapper with multi-forum support"""
 
-    def __init__(self, token: str, db: Database, forum_id: str = "linux-do", forum_name: str = "Linux.do", cache=None, recommended_keywords: list = None, recommended_users: list = None):
+    def __init__(
+        self,
+        token: str,
+        db: Database,
+        forum_id: str = "linux-do",
+        forum_name: str = "Linux.do",
+        admin_chat_id: Optional[int] = None,
+        cache=None,
+        recommended_keywords: list = None,
+        recommended_users: list = None,
+    ):
         self.token = token
         self.db = db
         self.forum_id = forum_id
         self.forum_name = forum_name
-        self.handlers = BotHandlers(db, forum_id, forum_name, cache=cache, recommended_keywords=recommended_keywords, recommended_users=recommended_users)
+        self.handlers = BotHandlers(
+            db,
+            forum_id,
+            forum_name,
+            admin_chat_id=admin_chat_id,
+            cache=cache,
+            recommended_keywords=recommended_keywords,
+            recommended_users=recommended_users,
+        )
         self.application: Application = None
 
     def setup(self) -> Application:
@@ -80,6 +99,33 @@ class TelegramBot:
         self.application.add_error_handler(self.error_handler)
 
         return self.application
+
+    async def configure_commands(self) -> None:
+        """Configure Telegram command menus for default users and admin."""
+        if not self.application:
+            return
+
+        default_commands = [
+            BotCommand("start", "开始使用"),
+            BotCommand("help", "获取帮助"),
+            BotCommand("add", "订阅关键词"),
+            BotCommand("list", "查看我的关键词"),
+            BotCommand("add_user", "订阅用户"),
+            BotCommand("list_users", "查看订阅的用户"),
+            BotCommand("add_all", "订阅全站新帖"),
+            BotCommand("del_all", "取消全站订阅"),
+        ]
+        await self.application.bot.set_my_commands(
+            default_commands,
+            scope=BotCommandScopeDefault(),
+        )
+
+        if self.handlers.admin_chat_id is not None:
+            admin_commands = default_commands + [BotCommand("stats", "查看统计")]
+            await self.application.bot.set_my_commands(
+                admin_commands,
+                scope=BotCommandScopeChat(chat_id=self.handlers.admin_chat_id),
+            )
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log the error and send a telegram message to notify the developer."""
